@@ -55,16 +55,15 @@ function ClockInOutPage() {
 
   const startCamera = async () => {
     try {
-      // Wait for video element to be available
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      if (!videoRef.current) {
-        throw new Error('Video element not ready. Please try again.');
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
+      
+      if (!videoRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        throw new Error('Video element not ready. Please try again.');
+      }
+      
       videoRef.current.srcObject = stream;
       setCameraActive(true);
     } catch (err) {
