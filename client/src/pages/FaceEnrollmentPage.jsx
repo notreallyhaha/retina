@@ -314,10 +314,14 @@ function FaceEnrollmentPage() {
       const allPass = messages.length === 0;
       setAllCriteriaMet(allPass);
 
+      // Check for critical failures that should always reset the timer
+      const criticalFailures = ['⚠️ TOO CLOSE', '⚠️ TOO FAR', '⚠️ CENTER YOUR FACE', '⚠️ NO FACE DETECTED'];
+      const hasCriticalFailure = messages.some(msg => criticalFailures.includes(msg));
+
       if (allPass) {
         handleAllCriteriaMet();
       } else {
-        handleCriteriaFailed();
+        handleCriteriaFailed(hasCriticalFailure);
       }
     } catch (err) {
       console.error('Detection error:', err);
@@ -358,11 +362,14 @@ function FaceEnrollmentPage() {
     setQualityMessages([]);
   };
 
-  const handleCriteriaFailed = () => {
+  const handleCriteriaFailed = (hasCriticalFailure = false) => {
     if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) return;
-    // Reset timer and go back to searching when criteria fails
-    // This ensures user must hold criteria continuously for 2 seconds
-    resetStableTimer();
+    
+    // Critical failures (distance, position, no face) always reset the timer
+    // Minor failures (tilt, eyes) only reset if we're still searching
+    if (hasCriticalFailure || status === STATUS.SEARCHING) {
+      resetStableTimer();
+    }
     setStatus(STATUS.SEARCHING);
   };
 
