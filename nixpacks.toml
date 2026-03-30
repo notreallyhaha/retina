@@ -8,4 +8,4 @@ cmds = ["npm install --prefix server"]
 cmds = ["echo 'Building server...'"]
 
 [start]
-cmd = "node server/index.js"
+cmd = "cd server && node index.js"
