@@ -53,8 +53,11 @@ try {
 try {
   db.initializeDatabase();
   console.log('Database initialized successfully');
+  console.log(`Database path: ${process.env.NODE_ENV === 'production' ? '/tmp/database.json' : 'local'}`);
 } catch (error) {
-  console.error('Failed to initialize database:', error);
+  console.error('Failed to initialize database:', error.message);
+  console.error('Stack:', error.stack);
+  // Don't crash - server can still run without DB initialization
 }
 
 // Password validation helper
@@ -419,10 +422,15 @@ app.post('/api/admin/bulk-upload', async (req, res) => {
 
 // Create HTTP server explicitly to keep event loop alive
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log('Face Recognition Clock System Ready!');
-  console.log(`PID: ${process.pid}`);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] Server running on port ${PORT}`);
+  console.log(`[${timestamp}] Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`[${timestamp}] Face Recognition Clock System Ready!`);
+  console.log(`[${timestamp}] PID: ${process.pid}`);
+  console.log(`[${timestamp}] Process uptime: ${process.uptime().toFixed(2)}s`);
+  
+  // Log active handles - helps debug if process exits unexpectedly
+  console.log(`[${timestamp}] Active handles: ${process._getActiveHandles ? process._getActiveHandles().length : 'N/A'}`);
 });
 
 // Keep server alive - prevent Railway from thinking process is done
@@ -443,12 +451,16 @@ process.on('unhandledRejection', (reason, promise) => {
 // Handle graceful shutdown - IGNORE SIGTERM in production
 // Railway sends SIGTERM as health check, don't exit
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received - keeping server alive (Railway health check)');
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] SIGTERM received - keeping server alive (Railway health check)`);
+  console.log(`[${timestamp}] Process uptime: ${process.uptime().toFixed(2)}s`);
   // Do NOT exit - Railway uses SIGTERM for health checks
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received - keeping server alive');
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] SIGINT received - keeping server alive`);
+  console.log(`[${timestamp}] Process uptime: ${process.uptime().toFixed(2)}s`);
   // Do NOT exit in production
 });
 

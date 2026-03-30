@@ -219,4 +219,19 @@ module.exports = {
   }
 };
 
-module.exports.initializeDatabase = initializeDatabase;
+module.exports = {
+  createUser,
+  updateUser,
+  findUserByEmail,
+  getUserById,
+  getAllEmployees,
+  getEmployeeByEmployeeId,
+  deleteEmployee,
+  createSession,
+  getSessionByToken,
+  deleteSession,
+  deleteAllSessions,
+  createAttendance,
+  getAttendanceRecords,
+  initializeDatabase
+};
