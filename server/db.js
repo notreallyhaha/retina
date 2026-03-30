@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const dbPath = path.join(__dirname, 'database.json');
+// Use /tmp for database in production (Railway compatibility)
+const dbPath = process.env.NODE_ENV === 'production'
+  ? '/tmp/database.json'
+  : path.join(__dirname, 'database.json');
 
 function loadDB() {
   try {

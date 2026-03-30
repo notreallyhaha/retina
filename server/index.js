@@ -32,8 +32,10 @@ app.options('*', (req, res) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+// Ensure uploads directory exists (use /tmp for Railway compatibility)
+const uploadsDir = process.env.NODE_ENV === 'production' 
+  ? '/tmp/uploads' 
+  : path.join(__dirname, '..', 'uploads');
 const proofDir = path.join(uploadsDir, 'proof');
 
 [uploadsDir, proofDir].forEach(dir => {
