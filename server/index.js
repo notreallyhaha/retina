@@ -380,6 +380,17 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root endpoint for Railway default health check
+app.get('/', (req, res) => {
+  console.log('Root endpoint requested');
+  res.json({
+    service: 'Face Recognition Clock System',
+    status: 'running',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ==================== ADMIN ROUTES ====================
 
 // Bulk upload employees (admin)
