@@ -15,12 +15,11 @@ COPY server/ ./server/
 # Set working directory to server
 WORKDIR /app/server
 
-# Expose port
+# Expose port (Railway will override with PORT env var)
 EXPOSE 5000
 
-# Set environment variables
+# Set environment variables (don't override PORT - Railway sets this)
 ENV NODE_ENV=production
-ENV PORT=5000
 
 # Start the server
 CMD ["node", "index.js"]
