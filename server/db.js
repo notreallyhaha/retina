@@ -216,22 +216,7 @@ module.exports = {
     }
 
     return records.sort((a, b) => new Date(b.timestamp) - new Date(b.timestamp));
-  }
-};
+  },
 
-module.exports = {
-  createUser,
-  updateUser,
-  findUserByEmail,
-  getUserById,
-  getAllEmployees,
-  getEmployeeByEmployeeId,
-  deleteEmployee,
-  createSession,
-  getSessionByToken,
-  deleteSession,
-  deleteAllSessions,
-  createAttendance,
-  getAttendanceRecords,
   initializeDatabase
 };
