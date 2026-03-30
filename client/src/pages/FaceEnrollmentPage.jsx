@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import FaceOval from '../components/FaceOval';
 import NotificationBar from '../components/NotificationBar';
 import FlashOverlay from '../components/FlashOverlay';
-import { checkDistance, checkPosition, checkTilt, checkEyesOpen } from '../utils/faceQuality';
+import { checkDistance, checkPosition, checkTilt, checkEyesOpen, checkLighting, getFaceImageData } from '../utils/faceQuality';
 import { detectLiveness, captureFrameImageData } from '../utils/liveness';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -23,12 +23,21 @@ const STATUS = {
 };
 
 // Optimization constants
-const DETECTION_FPS = 15; // Reduced from 30fps to 15fps for performance
-const DETECTION_INTERVAL = 1000 / DETECTION_FPS;
 const FLASH_COLORS = ['white', 'green', 'blue', 'white'];
 const FLASH_DURATION = 200;
 const STABLE_TIME_REQUIRED = 2000;
 const COUNTDOWN_DURATION = 1500;
+
+// Adaptive FPS settings
+const FPS_LEVELS = [
+  { fps: 15, minTime: 0, maxTime: 50 },    // 15fps if detection < 50ms
+  { fps: 10, minTime: 50, maxTime: 80 },   // 10fps if detection 50-80ms
+  { fps: 7, minTime: 80, maxTime: 120 },   // 7fps if detection 80-120ms
+  { fps: 5, minTime: 120, maxTime: Infinity } // 5fps if detection > 120ms
+];
+
+// Two-phase detection settings
+const LANDMARK_FRAME_INTERVAL = 3; // Run landmarks every 3rd frame
 
 function FaceEnrollmentPage() {
   const navigate = useNavigate();
@@ -39,7 +48,12 @@ function FaceEnrollmentPage() {
   const stableTimerRef = useRef(null);
   const countdownTimeoutRef = useRef(null);
   const lastDetectionRef = useRef(null);
-  const lastCheckTimeRef = useRef(0);
+  const lastLandmarksRef = useRef(null);
+  const frameCounterRef = useRef(0);
+  const detectionStartTimeRef = useRef(0);
+  const lightingCacheRef = useRef(null);
+  const messageDebounceRef = useRef(null);
+  const lastMessageUpdateRef = useRef(0);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,6 +70,9 @@ function FaceEnrollmentPage() {
   const [flashIndex, setFlashIndex] = useState(0);
   const [flashColor, setFlashColor] = useState('white');
   const [capturedFrames, setCapturedFrames] = useState([]);
+  
+  // Detection settings state
+  const [currentFps, setCurrentFps] = useState(10);
 
   useEffect(() => {
     if (!user) {
@@ -110,6 +127,10 @@ function FaceEnrollmentPage() {
       clearTimeout(countdownTimeoutRef.current);
       countdownTimeoutRef.current = null;
     }
+    if (messageDebounceRef.current) {
+      clearTimeout(messageDebounceRef.current);
+      messageDebounceRef.current = null;
+    }
   };
 
   const startCamera = async () => {
@@ -126,11 +147,12 @@ function FaceEnrollmentPage() {
         throw new Error('Video element not ready.');
       }
 
+      // Use lower resolution for better performance on mobile
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'user', 
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 },
+          width: { ideal: 640 },  // Reduced from 1280 for performance
+          height: { ideal: 480 }, // Reduced from 720 for performance
           frameRate: { ideal: 30 }
         }
       });
@@ -170,21 +192,42 @@ function FaceEnrollmentPage() {
 
   const startDetection = () => {
     if (!videoRef.current || !canvasRef.current) return;
-
-    detectionIntervalRef.current = setInterval(async () => {
-      await detectAndCheck();
-    }, DETECTION_INTERVAL);
+    scheduleNextDetection();
   };
 
-  const detectAndCheck = async () => {
+  const scheduleNextDetection = () => {
     if (!videoRef.current || !canvasRef.current || 
         status === STATUS.CAPTURING || status === STATUS.PROCESSING) {
       return;
     }
 
+    const interval = 1000 / currentFps;
+    detectionIntervalRef.current = setTimeout(async () => {
+      await detectAndCheck();
+      scheduleNextDetection();
+    }, interval);
+  };
+
+  const adjustFps = (detectionTime) => {
+    const newFpsConfig = FPS_LEVELS.find(level => 
+      detectionTime >= level.minTime && detectionTime < level.maxTime
+    );
+    
+    if (newFpsConfig && newFpsConfig.fps !== currentFps) {
+      setCurrentFps(newFpsConfig.fps);
+      console.log(`Adjusted FPS: ${currentFps} -> ${newFpsConfig.fps} (detection: ${detectionTime}ms)`);
+    }
+  };
+
+  const detectAndCheck = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
     const now = Date.now();
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    
+    // Record detection start time for adaptive FPS
+    detectionStartTimeRef.current = now;
     
     if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
       canvas.width = video.videoWidth;
@@ -192,49 +235,95 @@ function FaceEnrollmentPage() {
     }
 
     try {
-      const detection = await faceapi
-        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks();
+      frameCounterRef.current++;
+      const shouldRunLandmarks = frameCounterRef.current % LANDMARK_FRAME_INTERVAL === 0 || 
+                                   !lastLandmarksRef.current;
+
+      // Two-phase detection:
+      // - Always run face detection
+      // - Only run landmarks every N frames (or if we don't have cached landmarks)
+      let detection;
+      if (shouldRunLandmarks) {
+        detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({
+            inputSize: 160 // Smaller input = faster detection
+          }))
+          .withFaceLandmarks();
+        
+        if (detection) {
+          lastLandmarksRef.current = detection.landmarks;
+        }
+      } else {
+        // Detection only (no landmarks) - much faster
+        detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({
+            inputSize: 160
+          }));
+      }
+
+      // Calculate detection time and adjust FPS
+      const detectionTime = Date.now() - detectionStartTimeRef.current;
+      adjustFps(detectionTime);
 
       if (!detection) {
-        setQualityMessages(['⚠️ NO FACE DETECTED']);
+        // Face lost - clear caches
+        lastDetectionRef.current = null;
+        lastLandmarksRef.current = null;
+        lightingCacheRef.current = null;
+        
+        updateQualityMessages(['⚠️ NO FACE DETECTED']);
         setAllCriteriaMet(false);
         resetStableTimer();
         setStatus(STATUS.SEARCHING);
-        lastDetectionRef.current = null;
         return;
       }
 
       // Store detection for later use
       lastDetectionRef.current = detection;
 
-      // Run lightweight checks only (skip expensive lighting check)
+      // Run quality checks
       const messages = [];
-      
-      // Distance check
+
+      // Distance check (uses bounding box only - fast)
       const distanceResult = checkDistance(detection.detection.box.width);
       if (!distanceResult.pass) messages.push(distanceResult.message);
 
-      // Position check (with mirror flip compensation)
+      // Position check (uses bounding box only - fast)
       const videoCenterX = video.videoWidth / 2;
       const faceCenterX = detection.detection.box.x + detection.detection.box.width / 2;
-      // Flip X offset for mirrored display
-      const flippedOffsetX = -1 * (faceCenterX - videoCenterX);
+      const flippedOffsetX = -1 * (faceCenterX - videoCenterX); // Mirror compensation
       const faceCenterY = detection.detection.box.y + detection.detection.box.height / 2;
       const videoCenterY = video.videoHeight / 2;
       
       const positionResult = checkPosition(flippedOffsetX + videoCenterX, faceCenterY, videoCenterX, videoCenterY);
       if (!positionResult.pass) messages.push(positionResult.message);
 
-      // Tilt check
-      const tiltResult = checkTilt(detection.landmarks);
-      if (!tiltResult.pass) messages.push(tiltResult.message);
+      // Tilt and eyes checks (require landmarks - use cached if available)
+      if (lastLandmarksRef.current) {
+        const tiltResult = checkTilt(lastLandmarksRef.current);
+        if (!tiltResult.pass) messages.push(tiltResult.message);
 
-      // Eyes check
-      const eyesResult = checkEyesOpen(detection.landmarks);
-      if (!eyesResult.pass) messages.push(eyesResult.message);
+        const eyesResult = checkEyesOpen(lastLandmarksRef.current);
+        if (!eyesResult.pass) messages.push(eyesResult.message);
+      } else {
+        // No landmarks yet - skip these checks temporarily
+        // User will see "CENTER YOUR FACE" until landmarks load
+      }
 
-      setQualityMessages(messages);
+      // Lighting check - run only once when face first detected
+      if (!lightingCacheRef.current) {
+        const ctx = canvas.getContext('2d');
+        const imageData = getFaceImageData(canvas, detection.detection.box);
+        if (imageData) {
+          const lightingResult = checkLighting(imageData);
+          lightingCacheRef.current = lightingResult.pass;
+          if (!lightingResult.pass) {
+            messages.push(lightingResult.message);
+          }
+        }
+      }
+
+      updateQualityMessages(messages);
       const allPass = messages.length === 0;
       setAllCriteriaMet(allPass);
 
@@ -248,9 +337,32 @@ function FaceEnrollmentPage() {
     }
   };
 
+  // Debounced message updates (max once per 200ms)
+  const updateQualityMessages = (messages) => {
+    const now = Date.now();
+    const lastUpdate = lastMessageUpdateRef.current;
+    
+    // Check if messages actually changed
+    const messagesChanged = JSON.stringify(messages) !== JSON.stringify(qualityMessages);
+    
+    if (messagesChanged && now - lastUpdate > 200) {
+      // Update immediately if changed and debounce period passed
+      setQualityMessages(messages);
+      lastMessageUpdateRef.current = now;
+    } else if (messagesChanged) {
+      // Schedule update after debounce
+      if (messageDebounceRef.current) {
+        clearTimeout(messageDebounceRef.current);
+      }
+      messageDebounceRef.current = setTimeout(() => {
+        setQualityMessages(messages);
+        lastMessageUpdateRef.current = Date.now();
+      }, 200);
+    }
+  };
+
   const handleAllCriteriaMet = () => {
     if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) return;
-
     if (status !== STATUS.HOLDING && status !== STATUS.READY) {
       startStableTimer();
     }
@@ -432,6 +544,9 @@ function FaceEnrollmentPage() {
     setCapturedFrames([]);
     setStatus(STATUS.SEARCHING);
     resetStableTimer();
+    lightingCacheRef.current = null;
+    lastLandmarksRef.current = null;
+    frameCounterRef.current = 0;
   };
 
   const renderStatusText = () => {
@@ -535,6 +650,9 @@ function FaceEnrollmentPage() {
                     clearTimers();
                     setStatus(STATUS.SEARCHING);
                     setCapturedFrames([]);
+                    lightingCacheRef.current = null;
+                    lastLandmarksRef.current = null;
+                    frameCounterRef.current = 0;
                   }}
                   style={styles.stopBtn}
                   disabled={status === STATUS.CAPTURING || status === STATUS.PROCESSING}
@@ -683,8 +801,7 @@ const styles = {
     display: 'block',
     minHeight: '400px',
     objectFit: 'cover',
-    // Mirror the video for natural selfie experience
-    transform: 'scaleX(-1)'
+    transform: 'scaleX(-1)' // Mirror for natural selfie experience
   },
   canvas: {
     display: 'none'
