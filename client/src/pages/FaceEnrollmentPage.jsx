@@ -120,35 +120,57 @@ function FaceEnrollmentPage() {
         throw new Error('Camera API not available. Make sure you are using HTTPS or localhost.');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
-
-      if (!videoRef.current) {
-        throw new Error('Video element not ready');
-      }
-
-      videoRef.current.srcObject = stream;
+      // Set camera active first to render video element
       setCameraActive(true);
       setError('');
-      
-      // Wait for video to be ready
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+
+      // Wait for video element to be rendered in DOM
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!videoRef.current) {
+        throw new Error('Video element not ready. Please try again.');
+      }
+
+      // Request camera permission
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'user', 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 },
+          // Add these for better mobile compatibility
+          frameRate: { ideal: 30 }
+        }
+      });
+
+      videoRef.current.srcObject = stream;
+
+      // Wait for video to actually start playing
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Video load timeout')), 5000);
+        videoRef.current.onloadedmetadata = () => {
+          clearTimeout(timeout);
+          resolve();
+        };
+        videoRef.current.play().then(resolve).catch(reject);
+      });
+
       // Start real-time detection
       startDetection();
     } catch (err) {
       console.error('Camera error:', err);
-      
+      setCameraActive(false);
+
       let errorMessage = 'Failed to access camera. ';
       if (err.name === 'NotReadableError') {
         errorMessage = 'Camera is already in use. Close other apps and try again.';
       } else if (err.name === 'NotAllowedError') {
-        errorMessage = 'Camera permission denied.';
+        errorMessage = 'Camera permission denied. Tap the lock icon in address bar to allow.';
       } else if (err.name === 'NotFoundError') {
         errorMessage = 'No camera found.';
+      } else if (err.name === 'TypeError') {
+        errorMessage = 'Camera requires HTTPS. Use the deployed URL, not localhost.';
       }
-      
+
       setError(errorMessage);
     }
   };
