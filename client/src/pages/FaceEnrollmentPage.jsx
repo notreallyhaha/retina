@@ -143,14 +143,24 @@ function FaceEnrollmentPage() {
         throw new Error('Camera API not available. Make sure you are using HTTPS or localhost.');
       }
 
+      // Open modal first so video element renders
+      setIsModalOpen(true);
+
+      // Wait for video element to be available
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!videoRef.current) {
+        throw new Error('Video element not ready. Please try again.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       console.log('Camera access granted');
       videoRef.current.srcObject = stream;
-      setIsModalOpen(true);
     } catch (err) {
       console.error('Camera error:', err);
+      setIsModalOpen(false);
 
       let errorMessage = 'Failed to access camera. ';
 

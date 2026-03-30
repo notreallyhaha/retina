@@ -55,12 +55,20 @@ function ClockInOutPage() {
 
   const startCamera = async () => {
     try {
+      // Wait for video element to be available
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!videoRef.current) {
+        throw new Error('Video element not ready. Please try again.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       videoRef.current.srcObject = stream;
       setCameraActive(true);
     } catch (err) {
+      console.error('Camera error:', err);
       setError('Failed to access camera. Please allow camera permissions.');
     }
   };
