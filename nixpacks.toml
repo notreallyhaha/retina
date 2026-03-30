@@ -5,7 +5,7 @@ nixPkgs = ["nodejs-18_x"]
 cmds = ["cd server && npm install --production"]
 
 [phases.build]
-cmds = ["echo 'Building server...'"]
+cmds = ["echo 'Building server...'", "echo 'Force redeploy'"]
 
 [start]
 cmd = "cd server && node index.js"
