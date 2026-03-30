@@ -360,6 +360,8 @@ function FaceEnrollmentPage() {
 
   const handleCriteriaFailed = () => {
     if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) return;
+    // Reset timer and go back to searching when criteria fails
+    // This ensures user must hold criteria continuously for 2 seconds
     resetStableTimer();
     setStatus(STATUS.SEARCHING);
   };

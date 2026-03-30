@@ -8,19 +8,19 @@ export const THRESHOLDS = {
   // Distance: face width in pixels
   DISTANCE_MIN: 150,
   DISTANCE_MAX: 450,
-  
+
   // Lighting: brightness (0-255 scale)
   LIGHTING_MIN: 60,
   LIGHTING_MAX: 220,
-  
+
   // Position: center offset in pixels
   POSITION_OFFSET_MAX: 100,
-  
-  // Tilt: eye level difference in pixels
-  TILT_MAX: 20,
-  
-  // Eyes: minimum eye opening in pixels
-  EYE_OPEN_MIN: 3
+
+  // Tilt: eye level difference in pixels (relaxed for stability)
+  TILT_MAX: 25,
+
+  // Eyes: minimum eye opening in pixels (relaxed for natural blinking)
+  EYE_OPEN_MIN: 2
 };
 
 /**

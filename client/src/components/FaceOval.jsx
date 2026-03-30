@@ -42,7 +42,9 @@ function FaceOval({
   const ovalRy = 160; // Vertical radius
   const h = Math.pow(ovalRx - ovalRy, 2) / Math.pow(ovalRx + ovalRy, 2);
   const circumference = Math.PI * (ovalRx + ovalRy) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-  const strokeDashoffset = circumference * (1 - progressPercent / 100);
+  // Start from top (ellipse stroke starts at right, so offset by 1/4 circumference)
+  const quarterCircumference = circumference / 4;
+  const strokeDashoffset = quarterCircumference + (circumference * (1 - progressPercent / 100));
 
   return (
     <div style={styles.container}>
@@ -80,9 +82,7 @@ function FaceOval({
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
           style={{
-            transition: 'stroke-dashoffset 0.1s linear, stroke 0.2s ease',
-            transform: 'rotate(-90deg)',
-            transformOrigin: '50% 50%'
+            transition: 'stroke-dashoffset 0.1s linear, stroke 0.2s ease'
           }}
         />
 
