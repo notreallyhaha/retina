@@ -42,9 +42,9 @@ function FaceOval({
   const ovalRy = 160; // Vertical radius
   const h = Math.pow(ovalRx - ovalRy, 2) / Math.pow(ovalRx + ovalRy, 2);
   const circumference = Math.PI * (ovalRx + ovalRy) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
-  // Start from top (ellipse stroke starts at right, so offset by 1/4 circumference)
+  // Start from top: SVG ellipse stroke starts at right (0°), subtract 1/4 circumference to start at top (270°)
   const quarterCircumference = circumference / 4;
-  const strokeDashoffset = quarterCircumference + (circumference * (1 - progressPercent / 100));
+  const strokeDashoffset = (circumference * (1 - progressPercent / 100)) - quarterCircumference;
 
   return (
     <div style={styles.container}>
