@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import * as faceapi from 'face-api.js';
+import { useAuth } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function ClockInOutPage() {
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [clockType, setClockType] = useState('in');
@@ -16,15 +18,25 @@ function ClockInOutPage() {
   const [cameraActive, setCameraActive] = useState(false);
   const [location, setLocation] = useState(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [employeeId, setEmployeeId] = useState('');
-  const [showEmployeeId, setShowEmployeeId] = useState(false);
 
   useEffect(() => {
+    // Redirect if not authenticated
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+
+    // Check if user has completed face enrollment
+    if (!user?.faceEnrolled) {
+      navigate('/face-enrollment');
+      return;
+    }
+
     startCamera();
     getLocation();
     loadModels();
     return () => stopCamera();
-  }, []);
+  }, [isAuthenticated, user, navigate]);
 
   const loadModels = async () => {
     try {
@@ -43,8 +55,8 @@ function ClockInOutPage() {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       videoRef.current.srcObject = stream;
       setCameraActive(true);
@@ -81,7 +93,7 @@ function ClockInOutPage() {
       .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
       .withFaceLandmarks()
       .withFaceDescriptor();
-    
+
     return detection ? detection.descriptor : null;
   };
 
@@ -97,7 +109,7 @@ function ClockInOutPage() {
       canvas.getContext('2d').drawImage(video, 0, 0);
 
       const descriptor = await getFaceDescriptor();
-      
+
       if (!descriptor) {
         setError('No face detected. Please position your face clearly in the camera.');
         setLoading(false);
@@ -108,10 +120,11 @@ function ClockInOutPage() {
 
       const response = await axios.post(`${API_URL}/api/clock`, {
         type: clockType,
-        employeeId: employeeId || undefined,
         location: location,
         faceDescriptor: Array.from(descriptor),
         proofPhoto
+      }, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 
       setSuccess(response.data);
@@ -126,6 +139,17 @@ function ClockInOutPage() {
     }
   };
 
+  // Show loading while checking auth
+  if (!isAuthenticated) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.card}>
+          <div style={styles.loading}>Redirecting to login...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.card}>
@@ -139,7 +163,6 @@ function ClockInOutPage() {
             <h2 style={styles.successTitle}>Success</h2>
             <p style={styles.name}>{success.name}</p>
             <p style={styles.employeeId}>ID: {success.employeeId}</p>
-            <p style={styles.confidence}>Match: {success.confidence}%</p>
             <p style={styles.timestamp}>
               {new Date(success.timestamp).toLocaleString()}
             </p>
@@ -147,6 +170,11 @@ function ClockInOutPage() {
           </div>
         ) : (
           <>
+            <div style={styles.userInfo}>
+              <p style={styles.userName}>{user?.name}</p>
+              <p style={styles.userEmployeeId}>{user?.employeeId}</p>
+            </div>
+
             <div style={styles.toggleContainer}>
               <button
                 onClick={() => setClockType('in')}
@@ -162,30 +190,6 @@ function ClockInOutPage() {
               </button>
             </div>
 
-            <div style={styles.securityOption}>
-              <button 
-                onClick={() => setShowEmployeeId(!showEmployeeId)}
-                style={styles.securityBtn}
-              >
-                {showEmployeeId ? 'Hide' : 'Add'} Employee ID (optional)
-              </button>
-            </div>
-
-            {showEmployeeId && (
-              <div style={styles.formGroup}>
-                <input
-                  type="text"
-                  placeholder="Employee ID"
-                  value={employeeId}
-                  onChange={(e) => setEmployeeId(e.target.value)}
-                  style={styles.input}
-                />
-                <p style={styles.securityNote}>
-                  Adding your Employee ID provides extra verification
-                </p>
-              </div>
-            )}
-
             <div style={styles.cameraSection}>
               <video ref={videoRef} autoPlay playsInline style={styles.video} />
               <canvas ref={canvasRef} style={styles.canvas} />
@@ -199,9 +203,9 @@ function ClockInOutPage() {
 
             {error && <div style={styles.error}>{error}</div>}
 
-            <button 
-              onClick={captureAndClock} 
-              style={styles.submitBtn} 
+            <button
+              onClick={captureAndClock}
+              style={styles.submitBtn}
               disabled={loading || !modelsLoaded}
             >
               {loading ? 'Processing...' : `Clock ${clockType === 'in' ? 'In' : 'Out'}`}
@@ -246,6 +250,24 @@ const styles = {
     padding: '20px',
     color: '#737373'
   },
+  userInfo: {
+    background: '#0a0a0a',
+    border: '1px solid #262626',
+    borderRadius: '8px',
+    padding: '16px',
+    marginBottom: '20px',
+    textAlign: 'center'
+  },
+  userName: {
+    color: '#ffffff',
+    fontSize: '16px',
+    fontWeight: '500',
+    marginBottom: '4px'
+  },
+  userEmployeeId: {
+    color: '#a3a3a3',
+    fontSize: '14px'
+  },
   toggleContainer: {
     display: 'flex',
     gap: '8px',
@@ -271,38 +293,6 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer'
-  },
-  securityOption: {
-    marginBottom: '16px',
-    textAlign: 'center'
-  },
-  securityBtn: {
-    padding: '8px 16px',
-    background: '#0a0a0a',
-    color: '#737373',
-    border: '1px solid #262626',
-    borderRadius: '6px',
-    fontSize: '13px',
-    cursor: 'pointer'
-  },
-  formGroup: {
-    marginBottom: '16px'
-  },
-  input: {
-    width: '100%',
-    padding: '12px 14px',
-    background: '#0a0a0a',
-    border: '1px solid #262626',
-    borderRadius: '8px',
-    fontSize: '15px',
-    color: '#ffffff',
-    outline: 'none',
-    marginBottom: '8px'
-  },
-  securityNote: {
-    fontSize: '12px',
-    color: '#525252',
-    textAlign: 'center'
   },
   cameraSection: {
     textAlign: 'center',
@@ -364,12 +354,6 @@ const styles = {
     fontWeight: '500',
     fontSize: '14px',
     marginBottom: '8px'
-  },
-  confidence: {
-    color: '#86efac',
-    fontSize: '14px',
-    fontWeight: '500',
-    marginBottom: '12px'
   },
   timestamp: {
     color: '#525252',
