@@ -14,8 +14,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware - CORS configuration (must be first)
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*';
+
 app.use(cors({
-  origin: true, // Dynamically reflect origin for preflight requests
+  origin: allowedOrigins, // Use environment variable or allow all
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -368,11 +370,13 @@ app.get('/api/records', (req, res) => {
 // ==================== HEALTH CHECK ====================
 // Railway health check endpoint
 app.get('/health', (req, res) => {
+  console.log('Health check requested');
   res.json({
     status: 'healthy',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT
   });
 });
 
@@ -431,11 +435,27 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   
   // Log active handles - helps debug if process exits unexpectedly
   console.log(`[${timestamp}] Active handles: ${process._getActiveHandles ? process._getActiveHandles().length : 'N/A'}`);
+  
+  // Keep server process alive - create a persistent timer
+  if (process.env.NODE_ENV === 'production') {
+    console.log(`[${timestamp}] Starting keepalive timer...`);
+  }
 });
 
-// Keep server alive - prevent Railway from thinking process is done
+// Prevent server from closing due to idle timeout
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
+
+// Keep server alive - prevent Railway from thinking process is done
+// This interval keeps the event loop busy so Node.js doesn't exit
+const keepAliveInterval = setInterval(() => {
+  // Keep event loop active
+}, 30000);
+
+// Make sure interval doesn't prevent shutdown in development
+if (process.env.NODE_ENV !== 'production') {
+  keepAliveInterval.unref();
+}
 
 // Handle uncaught errors to prevent container crash
 process.on('uncaughtException', (err) => {

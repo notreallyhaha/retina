@@ -17,11 +17,6 @@
     }
   },
   "deploy": {
-    "startCommand": "cd server && node index.js",
-    "healthcheck": {
-      "path": "/health",
-      "timeout": 30,
-      "interval": 10
-    }
+    "startCommand": "cd server && node index.js"
   }
 }
