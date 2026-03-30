@@ -6,6 +6,29 @@ const dbPath = process.env.NODE_ENV === 'production'
   ? '/tmp/database.json'
   : path.join(__dirname, 'database.json');
 
+// Initialize database file on startup
+function initializeDatabase() {
+  try {
+    // Ensure directory exists
+    const dir = path.dirname(dbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    // Create empty database if it doesn't exist
+    if (!fs.existsSync(dbPath)) {
+      saveDB({ users: [], attendance: [], sessions: [] });
+    }
+    
+    // Test write access
+    const testWrite = fs.accessSync(dir, fs.constants.W_OK);
+    console.log(`Database path: ${dbPath}, writable: ${testWrite === undefined}`);
+  } catch (error) {
+    console.error('Database initialization error:', error.message);
+    throw error;
+  }
+}
+
 function loadDB() {
   try {
     if (fs.existsSync(dbPath)) {
@@ -195,3 +218,5 @@ module.exports = {
     return records.sort((a, b) => new Date(b.timestamp) - new Date(b.timestamp));
   }
 };
+
+module.exports.initializeDatabase = initializeDatabase;

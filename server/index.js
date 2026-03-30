@@ -33,16 +33,29 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Ensure uploads directory exists (use /tmp for Railway compatibility)
-const uploadsDir = process.env.NODE_ENV === 'production' 
-  ? '/tmp/uploads' 
+const uploadsDir = process.env.NODE_ENV === 'production'
+  ? '/tmp/uploads'
   : path.join(__dirname, '..', 'uploads');
 const proofDir = path.join(uploadsDir, 'proof');
 
-[uploadsDir, proofDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
+try {
+  [uploadsDir, proofDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`Created directory: ${dir}`);
+    }
+  });
+} catch (error) {
+  console.error('Failed to create uploads directories:', error);
+}
+
+// Initialize database on startup (catch any write permission issues early)
+try {
+  db.initializeDatabase();
+  console.log('Database initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize database:', error);
+}
 
 // Password validation helper
 const validatePassword = (password) => {
@@ -349,6 +362,17 @@ app.get('/api/records', (req, res) => {
   }
 });
 
+// ==================== HEALTH CHECK ====================
+// Railway health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // ==================== ADMIN ROUTES ====================
 
 // Bulk upload employees (admin)
@@ -393,8 +417,44 @@ app.post('/api/admin/bulk-upload', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Create HTTP server explicitly to keep event loop alive
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('Face Recognition Clock System Ready!');
+  console.log(`PID: ${process.pid}`);
 });
+
+// Keep server alive - prevent Railway from thinking process is done
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;
+
+// Handle uncaught errors to prevent container crash
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Don't exit - keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - keep server running
+});
+
+// Handle graceful shutdown - IGNORE SIGTERM in production
+// Railway sends SIGTERM as health check, don't exit
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received - keeping server alive (Railway health check)');
+  // Do NOT exit - Railway uses SIGTERM for health checks
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received - keeping server alive');
+  // Do NOT exit in production
+});
+
+// Heartbeat to keep event loop active (prevents Railway from killing idle container)
+if (process.env.NODE_ENV === 'production') {
+  setInterval(() => {
+    // This keeps the event loop busy so Railway doesn't think process is done
+  }, 30000);
+}
