@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import * as faceapi from 'face-api.js';
@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import FaceOval from '../components/FaceOval';
 import NotificationBar from '../components/NotificationBar';
 import FlashOverlay from '../components/FlashOverlay';
-import { runAllChecks, getFaceImageData } from '../utils/faceQuality';
+import { checkDistance, checkPosition, checkTilt, checkEyesOpen } from '../utils/faceQuality';
 import { detectLiveness, captureFrameImageData } from '../utils/liveness';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -22,11 +22,13 @@ const STATUS = {
   SUCCESS: 'success'
 };
 
-// Flash sequence colors
+// Optimization constants
+const DETECTION_FPS = 15; // Reduced from 30fps to 15fps for performance
+const DETECTION_INTERVAL = 1000 / DETECTION_FPS;
 const FLASH_COLORS = ['white', 'green', 'blue', 'white'];
-const FLASH_DURATION = 200; // ms per flash
-const STABLE_TIME_REQUIRED = 2000; // ms before countdown
-const COUNTDOWN_DURATION = 1500; // 1.5s for countdown
+const FLASH_DURATION = 200;
+const STABLE_TIME_REQUIRED = 2000;
+const COUNTDOWN_DURATION = 1500;
 
 function FaceEnrollmentPage() {
   const navigate = useNavigate();
@@ -36,29 +38,25 @@ function FaceEnrollmentPage() {
   const detectionIntervalRef = useRef(null);
   const stableTimerRef = useRef(null);
   const countdownTimeoutRef = useRef(null);
+  const lastDetectionRef = useRef(null);
+  const lastCheckTimeRef = useRef(0);
 
-  // State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [status, setStatus] = useState(STATUS.SEARCHING);
   
-  // Quality check state
   const [qualityMessages, setQualityMessages] = useState([]);
   const [allCriteriaMet, setAllCriteriaMet] = useState(false);
   const [stableTime, setStableTime] = useState(0);
-  
-  // Countdown state
   const [countdownValue, setCountdownValue] = useState(3);
   
-  // Flash capture state
   const [flashActive, setFlashActive] = useState(false);
   const [flashIndex, setFlashIndex] = useState(0);
   const [flashColor, setFlashColor] = useState('white');
   const [capturedFrames, setCapturedFrames] = useState([]);
 
-  // Load models on mount
   useEffect(() => {
     if (!user) {
       navigate('/login');
@@ -117,44 +115,39 @@ function FaceEnrollmentPage() {
   const startCamera = async () => {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera API not available. Make sure you are using HTTPS or localhost.');
+        throw new Error('Camera API not available.');
       }
 
-      // Set camera active first to render video element
       setCameraActive(true);
       setError('');
-
-      // Wait for video element to be rendered in DOM
       await new Promise(resolve => setTimeout(resolve, 100));
 
       if (!videoRef.current) {
-        throw new Error('Video element not ready. Please try again.');
+        throw new Error('Video element not ready.');
       }
 
-      // Request camera permission
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'user', 
           width: { ideal: 1280 }, 
           height: { ideal: 720 },
-          // Add these for better mobile compatibility
           frameRate: { ideal: 30 }
         }
       });
 
       videoRef.current.srcObject = stream;
 
-      // Wait for video to actually start playing
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Video load timeout')), 5000);
-        videoRef.current.onloadedmetadata = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
-        videoRef.current.play().then(resolve).catch(reject);
+        if (videoRef.current) {
+          videoRef.current.onloadedmetadata = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+          videoRef.current.play().then(resolve).catch(reject);
+        }
       });
 
-      // Start real-time detection
       startDetection();
     } catch (err) {
       console.error('Camera error:', err);
@@ -162,13 +155,13 @@ function FaceEnrollmentPage() {
 
       let errorMessage = 'Failed to access camera. ';
       if (err.name === 'NotReadableError') {
-        errorMessage = 'Camera is already in use. Close other apps and try again.';
+        errorMessage = 'Camera is already in use.';
       } else if (err.name === 'NotAllowedError') {
-        errorMessage = 'Camera permission denied. Tap the lock icon in address bar to allow.';
+        errorMessage = 'Camera permission denied. Tap the lock icon to allow.';
       } else if (err.name === 'NotFoundError') {
         errorMessage = 'No camera found.';
       } else if (err.name === 'TypeError') {
-        errorMessage = 'Camera requires HTTPS. Use the deployed URL, not localhost.';
+        errorMessage = 'Camera requires HTTPS.';
       }
 
       setError(errorMessage);
@@ -180,18 +173,19 @@ function FaceEnrollmentPage() {
 
     detectionIntervalRef.current = setInterval(async () => {
       await detectAndCheck();
-    }, 33); // ~30fps
+    }, DETECTION_INTERVAL);
   };
 
   const detectAndCheck = async () => {
-    if (!videoRef.current || !canvasRef.current || status === STATUS.CAPTURING || status === STATUS.PROCESSING) {
+    if (!videoRef.current || !canvasRef.current || 
+        status === STATUS.CAPTURING || status === STATUS.PROCESSING) {
       return;
     }
 
+    const now = Date.now();
     const video = videoRef.current;
     const canvas = canvasRef.current;
     
-    // Update canvas size to match video
     if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -207,25 +201,45 @@ function FaceEnrollmentPage() {
         setAllCriteriaMet(false);
         resetStableTimer();
         setStatus(STATUS.SEARCHING);
+        lastDetectionRef.current = null;
         return;
       }
 
-      // Get face image data for lighting check
-      const faceImageData = getFaceImageData(canvas, detection.detection.box);
+      // Store detection for later use
+      lastDetectionRef.current = detection;
 
-      // Run all quality checks
-      const { allPass, messages } = runAllChecks(
-        detection,
-        video.videoWidth,
-        video.videoHeight,
-        faceImageData
-      );
+      // Run lightweight checks only (skip expensive lighting check)
+      const messages = [];
+      
+      // Distance check
+      const distanceResult = checkDistance(detection.detection.box.width);
+      if (!distanceResult.pass) messages.push(distanceResult.message);
+
+      // Position check (with mirror flip compensation)
+      const videoCenterX = video.videoWidth / 2;
+      const faceCenterX = detection.detection.box.x + detection.detection.box.width / 2;
+      // Flip X offset for mirrored display
+      const flippedOffsetX = -1 * (faceCenterX - videoCenterX);
+      const faceCenterY = detection.detection.box.y + detection.detection.box.height / 2;
+      const videoCenterY = video.videoHeight / 2;
+      
+      const positionResult = checkPosition(flippedOffsetX + videoCenterX, faceCenterY, videoCenterX, videoCenterY);
+      if (!positionResult.pass) messages.push(positionResult.message);
+
+      // Tilt check
+      const tiltResult = checkTilt(detection.landmarks);
+      if (!tiltResult.pass) messages.push(tiltResult.message);
+
+      // Eyes check
+      const eyesResult = checkEyesOpen(detection.landmarks);
+      if (!eyesResult.pass) messages.push(eyesResult.message);
 
       setQualityMessages(messages);
+      const allPass = messages.length === 0;
       setAllCriteriaMet(allPass);
 
       if (allPass) {
-        handleAllCriteriaMet(detection, faceImageData);
+        handleAllCriteriaMet();
       } else {
         handleCriteriaFailed();
       }
@@ -234,23 +248,17 @@ function FaceEnrollmentPage() {
     }
   };
 
-  const handleAllCriteriaMet = (detection, imageData) => {
-    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) {
-      return;
-    }
+  const handleAllCriteriaMet = () => {
+    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) return;
 
     if (status !== STATUS.HOLDING && status !== STATUS.READY) {
       startStableTimer();
     }
-    
     setStatus(STATUS.READY);
   };
 
   const handleCriteriaFailed = () => {
-    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) {
-      return;
-    }
-    
+    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) return;
     resetStableTimer();
     setStatus(STATUS.SEARCHING);
   };
@@ -262,13 +270,10 @@ function FaceEnrollmentPage() {
     stableTimerRef.current = setInterval(() => {
       setStableTime(prev => {
         const newTime = prev + 100;
-        
         if (newTime >= STABLE_TIME_REQUIRED) {
-          // Start countdown
           startCountdown();
           return STABLE_TIME_REQUIRED;
         }
-        
         return newTime;
       });
     }, 100);
@@ -283,18 +288,14 @@ function FaceEnrollmentPage() {
   };
 
   const startCountdown = () => {
-    if (countdownTimeoutRef.current) {
-      clearTimeout(countdownTimeoutRef.current);
-    }
+    if (countdownTimeoutRef.current) clearTimeout(countdownTimeoutRef.current);
     
     setStatus(STATUS.HOLDING);
     setCountdownValue(3);
     
-    // Update status to holding after brief delay
     countdownTimeoutRef.current = setTimeout(() => {
       setStatus(STATUS.COUNTDOWN);
       
-      // Countdown sequence: 3... 2... 1...
       const countdownInterval = setInterval(() => {
         setCountdownValue(prev => {
           if (prev <= 1) {
@@ -317,12 +318,10 @@ function FaceEnrollmentPage() {
     setCapturedFrames([]);
     setFlashIndex(0);
     
-    // Capture 4 frames with flash sequence
     for (let i = 0; i < FLASH_COLORS.length; i++) {
       await captureFrameWithFlash(i);
     }
     
-    // Process captured frames
     await processCapturedFrames();
   };
 
@@ -332,25 +331,19 @@ function FaceEnrollmentPage() {
       setFlashColor(FLASH_COLORS[index]);
       setFlashActive(true);
       
-      // Capture frame data
       setTimeout(() => {
-        if (videoRef.current) {
-          const detection = faceapi
-            .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks();
+        if (videoRef.current && lastDetectionRef.current) {
+          const detection = lastDetectionRef.current;
+          const descriptor = Array.from(detection.descriptor);
+          const imageData = captureFrameImageData(videoRef.current, detection.detection.box);
+          const brightness = imageData ? calculateBrightness(imageData) : 128;
           
-          if (detection) {
-            const descriptor = Array.from(detection.descriptor);
-            const imageData = captureFrameImageData(videoRef.current, detection.detection.box);
-            const brightness = imageData ? calculateBrightness(imageData) : 128;
-            
-            setCapturedFrames(prev => [...prev, {
-              descriptor,
-              imageData,
-              brightness,
-              flashColor: FLASH_COLORS[index]
-            }]);
-          }
+          setCapturedFrames(prev => [...prev, {
+            descriptor,
+            imageData,
+            brightness,
+            flashColor: FLASH_COLORS[index]
+          }]);
         }
         
         setFlashActive(false);
@@ -377,9 +370,7 @@ function FaceEnrollmentPage() {
       return;
     }
 
-    // Run liveness detection
     const livenessResult = detectLiveness(capturedFrames);
-    
     console.log('Liveness result:', livenessResult);
 
     if (!livenessResult.isLive) {
@@ -390,7 +381,6 @@ function FaceEnrollmentPage() {
       return;
     }
 
-    // Submit to server
     await submitEnrollment();
   };
 
@@ -429,13 +419,11 @@ function FaceEnrollmentPage() {
   const calculateAverageDescriptor = (descriptors) => {
     const length = descriptors[0].length;
     const avg = new Array(length).fill(0);
-
     descriptors.forEach(desc => {
       desc.forEach((val, i) => {
         avg[i] += val / descriptors.length;
       });
     });
-
     return avg;
   };
 
@@ -446,31 +434,20 @@ function FaceEnrollmentPage() {
     resetStableTimer();
   };
 
-  // Render status text
   const renderStatusText = () => {
     switch (status) {
-      case STATUS.SEARCHING:
-        return 'Position your face in the oval';
-      case STATUS.READY:
-        return '✓ Perfect - Hold still...';
-      case STATUS.HOLDING:
-        return '✓ Hold still...';
-      case STATUS.COUNTDOWN:
-        return '';
-      case STATUS.CAPTURING:
-        return `Capturing frame ${flashIndex + 1}...`;
-      case STATUS.PROCESSING:
-        return 'Processing...';
-      case STATUS.SUCCESS:
-        return '✓ Enrollment successful!';
-      default:
-        return '';
+      case STATUS.SEARCHING: return 'Position your face in the oval';
+      case STATUS.READY: return '✓ Perfect - Hold still...';
+      case STATUS.HOLDING: return '✓ Hold still...';
+      case STATUS.COUNTDOWN: return '';
+      case STATUS.CAPTURING: return `Capturing frame ${flashIndex + 1}...`;
+      case STATUS.PROCESSING: return 'Processing...';
+      case STATUS.SUCCESS: return '✓ Enrollment successful!';
+      default: return '';
     }
   };
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <div style={styles.container}>
@@ -523,10 +500,8 @@ function FaceEnrollmentPage() {
               </button>
             ) : (
               <div style={styles.cameraContainer}>
-                {/* Notification Bar */}
                 <NotificationBar messages={qualityMessages} />
 
-                {/* Video Container with Face Oval */}
                 <div style={styles.videoWrapper}>
                   <video
                     ref={videoRef}
@@ -537,7 +512,6 @@ function FaceEnrollmentPage() {
                   />
                   <canvas ref={canvasRef} style={styles.canvas} />
                   
-                  {/* Face Oval Overlay */}
                   <div style={styles.faceOvalOverlay}>
                     <FaceOval
                       allCriteriaMet={allCriteriaMet}
@@ -550,12 +524,10 @@ function FaceEnrollmentPage() {
                   </div>
                 </div>
 
-                {/* Status Text */}
                 <div style={styles.statusText}>
                   {renderStatusText()}
                 </div>
 
-                {/* Stop Camera Button */}
                 <button
                   type="button"
                   onClick={() => {
@@ -579,7 +551,6 @@ function FaceEnrollmentPage() {
         </button>
       </div>
 
-      {/* Flash Overlay */}
       <FlashOverlay
         active={flashActive}
         flashIndex={flashIndex}
@@ -711,7 +682,9 @@ const styles = {
     width: '100%',
     display: 'block',
     minHeight: '400px',
-    objectFit: 'cover'
+    objectFit: 'cover',
+    // Mirror the video for natural selfie experience
+    transform: 'scaleX(-1)'
   },
   canvas: {
     display: 'none'
