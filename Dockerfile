@@ -16,7 +16,7 @@ COPY server/ ./server/
 WORKDIR /app/server
 
 # Expose port (Railway will override with PORT env var)
-EXPOSE 5000
+EXPOSE 8080
 
 # Set environment variables (don't override PORT - Railway sets this)
 ENV NODE_ENV=production
