@@ -31,7 +31,9 @@ app.use((req, res, next) => {
 
 // Handle preflight OPTIONS requests explicitly
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', req.get('Origin') || '*');
+  const origin = req.get('Origin') || '*';
+  console.log(`[${new Date().toISOString()}] OPTIONS preflight from origin: ${origin}`);
+  res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
@@ -95,6 +97,7 @@ const validatePassword = (password) => {
 
 // Register - Create account with email/password
 app.post('/api/auth/register', async (req, res) => {
+  console.log(`[${new Date().toISOString()}] POST /api/auth/register - Body: ${JSON.stringify(req.body).substring(0, 100)}...`);
   try {
     const { name, email, password } = req.body;
 
