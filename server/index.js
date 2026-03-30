@@ -19,6 +19,14 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   : ['*'];
 
 // Middleware - CORS configuration
+// Handle preflight OPTIONS requests first
+app.options('*', cors({
+  origin: allowedOrigins.includes('*') ? '*' : allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -29,7 +37,9 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
