@@ -245,15 +245,20 @@ app.get('/api/auth/me', auth, (req, res) => {
 // Complete face enrollment (requires auth)
 app.post('/api/register/face', auth, async (req, res) => {
   try {
-    const { faceDescriptors, averageDescriptor } = req.body;
+    const { faceDescriptors, averageDescriptor, livenessScore } = req.body;
 
     if (!faceDescriptors || faceDescriptors.length === 0) {
       return res.status(400).json({ error: 'Face descriptors are required' });
     }
 
-    // Validate we have multiple descriptors for security
-    if (faceDescriptors.length < 3) {
-      return res.status(400).json({ error: 'Minimum 3 face angles required for secure enrollment' });
+    // Validate we have at least 4 descriptors (flash frames)
+    if (faceDescriptors.length < 4) {
+      return res.status(400).json({ error: 'Minimum 4 flash frames required for secure enrollment' });
+    }
+
+    // Validate liveness score if provided
+    if (livenessScore !== undefined && livenessScore < 0.5) {
+      return res.status(400).json({ error: 'Liveness check failed. Please try again.' });
     }
 
     // Generate employee ID from user ID
@@ -264,10 +269,11 @@ app.post('/api/register/face', auth, async (req, res) => {
       employee_id: employeeId,
       faceDescriptors,
       averageDescriptor,
+      livenessScore: livenessScore || null,
       face_enrolled: true
     });
 
-    console.log(`Face enrolled for user: ${req.user.name} (${employeeId}) with ${faceDescriptors.length} descriptors`);
+    console.log(`Face enrolled for user: ${req.user.name} (${employeeId}) with ${faceDescriptors.length} flash frames, liveness: ${livenessScore || 'N/A'}`);
 
     res.json({
       success: true,

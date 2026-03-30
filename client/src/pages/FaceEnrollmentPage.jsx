@@ -1,106 +1,65 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import * as faceapi from 'face-api.js';
 import { useAuth } from '../context/AuthContext';
+import FaceOval from '../components/FaceOval';
+import NotificationBar from '../components/NotificationBar';
+import FlashOverlay from '../components/FlashOverlay';
+import { runAllChecks, getFaceImageData } from '../utils/faceQuality';
+import { detectLiveness, captureFrameImageData } from '../utils/liveness';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-const ENROLLMENT_STEPS = [
-  { instruction: 'Look straight ahead', angle: 'center' },
-  { instruction: 'Turn your head slightly left', angle: 'left' },
-  { instruction: 'Turn your head slightly right', angle: 'right' },
-  { instruction: 'Look up slightly', angle: 'up' },
-  { instruction: 'Look down slightly', angle: 'down' }
-];
+// Status constants
+const STATUS = {
+  SEARCHING: 'searching',
+  READY: 'ready',
+  HOLDING: 'holding',
+  COUNTDOWN: 'countdown',
+  CAPTURING: 'capturing',
+  PROCESSING: 'processing',
+  SUCCESS: 'success'
+};
 
-// Camera Modal Component
-function CameraEnrollmentModal({
-  isOpen,
-  onClose,
-  videoRef,
-  canvasRef,
-  currentStep,
-  setCurrentStep,
-  capturedFrames,
-  setCapturedFrames,
-  isCapturing,
-  setIsCapturing,
-  error,
-  setError,
-  loading,
-  onCapture,
-  onCancel
-}) {
-  if (!isOpen) return null;
-
-  return (
-    <div style={modalStyles.overlay}>
-      <div style={modalStyles.modal}>
-        <button onClick={onClose} style={modalStyles.closeBtn}>×</button>
-
-        <div style={modalStyles.stepIndicator}>
-          Step {currentStep + 1} of {ENROLLMENT_STEPS.length}
-        </div>
-
-        <div style={modalStyles.instructionBox}>
-          <p style={modalStyles.instructionText}>
-            {ENROLLMENT_STEPS[currentStep].instruction}
-          </p>
-        </div>
-
-        <div style={modalStyles.videoContainer}>
-          <video ref={videoRef} autoPlay playsInline style={modalStyles.video} />
-          <canvas ref={canvasRef} style={modalStyles.canvas} />
-        </div>
-
-        <div style={modalStyles.framesCaptured}>
-          Frames captured: {capturedFrames.length} / {ENROLLMENT_STEPS.length}
-        </div>
-
-        {error && <div style={modalStyles.error}>{error}</div>}
-
-        <div style={modalStyles.buttonRow}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={modalStyles.cancelBtn}
-            disabled={loading}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onCapture}
-            style={modalStyles.captureBtn}
-            disabled={loading || isCapturing}
-          >
-            {isCapturing ? 'Capturing...' : `Capture Frame ${currentStep + 1}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Flash sequence colors
+const FLASH_COLORS = ['white', 'green', 'blue', 'white'];
+const FLASH_DURATION = 200; // ms per flash
+const STABLE_TIME_REQUIRED = 2000; // ms before countdown
+const COUNTDOWN_DURATION = 1500; // 1.5s for countdown
 
 function FaceEnrollmentPage() {
   const navigate = useNavigate();
   const { user, updateUser } = useAuth();
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const detectionIntervalRef = useRef(null);
+  const stableTimerRef = useRef(null);
+  const countdownTimeoutRef = useRef(null);
+
+  // State
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Multi-frame enrollment state
-  const [currentStep, setCurrentStep] = useState(0);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [status, setStatus] = useState(STATUS.SEARCHING);
+  
+  // Quality check state
+  const [qualityMessages, setQualityMessages] = useState([]);
+  const [allCriteriaMet, setAllCriteriaMet] = useState(false);
+  const [stableTime, setStableTime] = useState(0);
+  
+  // Countdown state
+  const [countdownValue, setCountdownValue] = useState(3);
+  
+  // Flash capture state
+  const [flashActive, setFlashActive] = useState(false);
+  const [flashIndex, setFlashIndex] = useState(0);
+  const [flashColor, setFlashColor] = useState('white');
   const [capturedFrames, setCapturedFrames] = useState([]);
-  const [isCapturing, setIsCapturing] = useState(false);
 
+  // Load models on mount
   useEffect(() => {
-    // Redirect if not authenticated or already enrolled
     if (!user) {
       navigate('/login');
       return;
@@ -111,7 +70,10 @@ function FaceEnrollmentPage() {
     }
 
     loadModels();
-    return () => stopCamera();
+    return () => {
+      stopCamera();
+      clearTimers();
+    };
   }, [user, navigate]);
 
   const loadModels = async () => {
@@ -132,170 +94,313 @@ function FaceEnrollmentPage() {
   const stopCamera = () => {
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(false);
+  };
+
+  const clearTimers = () => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+    if (stableTimerRef.current) {
+      clearInterval(stableTimerRef.current);
+      stableTimerRef.current = null;
+    }
+    if (countdownTimeoutRef.current) {
+      clearTimeout(countdownTimeoutRef.current);
+      countdownTimeoutRef.current = null;
     }
   };
 
   const startCamera = async () => {
     try {
-      console.log('Requesting camera access...');
-
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not available. Make sure you are using HTTPS or localhost.');
-      }
-
-      // Open modal first so video element renders
-      setIsModalOpen(true);
-
-      // Wait for video element to be available
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      if (!videoRef.current) {
-        throw new Error('Video element not ready. Please try again.');
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
-      console.log('Camera access granted');
-      videoRef.current.srcObject = stream;
-    } catch (err) {
-      console.error('Camera error:', err);
-      setIsModalOpen(false);
 
-      let errorMessage = 'Failed to access camera. ';
-
-      if (err.name === 'NotReadableError') {
-        errorMessage = 'Camera is already in use. Close other apps (Zoom, Teams, etc.) and try again.';
-      } else if (err.name === 'NotAllowedError') {
-        errorMessage = 'Camera permission denied. Please allow camera access in your browser settings.';
-      } else if (err.name === 'NotFoundError') {
-        errorMessage = 'No camera found. Please connect a camera and try again.';
-      } else if (err.message.includes('HTTPS') || err.message.includes('secure')) {
-        errorMessage = 'Camera requires HTTPS. Use localhost or ngrok URL.';
-      } else {
-        errorMessage += err.message;
+      if (!videoRef.current) {
+        throw new Error('Video element not ready');
       }
 
+      videoRef.current.srcObject = stream;
+      setCameraActive(true);
+      setError('');
+      
+      // Wait for video to be ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Start real-time detection
+      startDetection();
+    } catch (err) {
+      console.error('Camera error:', err);
+      
+      let errorMessage = 'Failed to access camera. ';
+      if (err.name === 'NotReadableError') {
+        errorMessage = 'Camera is already in use. Close other apps and try again.';
+      } else if (err.name === 'NotAllowedError') {
+        errorMessage = 'Camera permission denied.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage = 'No camera found.';
+      }
+      
       setError(errorMessage);
     }
   };
 
-  const closeModal = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsModalOpen(false);
-    resetEnrollment();
+  const startDetection = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    detectionIntervalRef.current = setInterval(async () => {
+      await detectAndCheck();
+    }, 33); // ~30fps
   };
 
-  const getFaceDescriptor = async () => {
-    const video = videoRef.current;
-    const detection = await faceapi
-      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    return detection ? { descriptor: detection.descriptor, landmarks: detection.landmarks } : null;
-  };
-
-  const checkQuality = async (result) => {
-    if (!result) return { valid: false, reason: 'No face detected' };
-
-    const landmarks = result.landmarks;
-    if (!landmarks) return { valid: false, reason: 'Could not detect face landmarks' };
-
-    const jawline = landmarks.getJawOutline();
-    const faceWidth = Math.abs(jawline[16].x - jawline[0].x);
-    const faceHeight = Math.abs(landmarks.nose.y - jawline[8].y);
-
-    const video = videoRef.current;
-    const minFaceSize = Math.min(video.videoWidth, video.videoHeight) * 0.2;
-
-    if (faceWidth < minFaceSize || faceHeight < minFaceSize) {
-      return { valid: false, reason: 'Face too small. Move closer to the camera.' };
-    }
-
-    const leftEye = landmarks.getLeftEye();
-    const rightEye = landmarks.getRightEye();
-    const leftEyeOpen = leftEye[3].y - leftEye[1].y > 3;
-    const rightEyeOpen = rightEye[3].y - rightEye[1].y > 3;
-
-    if (!leftEyeOpen || !rightEyeOpen) {
-      return { valid: false, reason: 'Please open your eyes fully' };
-    }
-
-    return { valid: true, quality: Math.min(faceWidth, faceHeight) };
-  };
-
-  const captureFrame = async () => {
-    if (!videoRef.current) return null;
-
-    const result = await getFaceDescriptor();
-    const quality = await checkQuality(result);
-
-    if (!quality.valid) {
-      return { error: quality.reason };
-    }
-
-    return {
-      descriptor: Array.from(result.descriptor),
-      quality: quality.quality
-    };
-  };
-
-  const handleCapture = async () => {
-    if (isCapturing) return;
-
-    setIsCapturing(true);
-    setError('');
-
-    const result = await captureFrame();
-
-    if (result.error) {
-      setError(result.error);
-      setIsCapturing(false);
+  const detectAndCheck = async () => {
+    if (!videoRef.current || !canvasRef.current || status === STATUS.CAPTURING || status === STATUS.PROCESSING) {
       return;
     }
 
-    const newFrames = [...capturedFrames, result];
-    setCapturedFrames(newFrames);
-
-    if (newFrames.length >= ENROLLMENT_STEPS.length) {
-      await submitEnrollment(newFrames);
-    } else {
-      setCurrentStep(currentStep + 1);
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    
+    // Update canvas size to match video
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
     }
 
-    setIsCapturing(false);
+    try {
+      const detection = await faceapi
+        .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
+
+      if (!detection) {
+        setQualityMessages(['⚠️ NO FACE DETECTED']);
+        setAllCriteriaMet(false);
+        resetStableTimer();
+        setStatus(STATUS.SEARCHING);
+        return;
+      }
+
+      // Get face image data for lighting check
+      const faceImageData = getFaceImageData(canvas, detection.detection.box);
+
+      // Run all quality checks
+      const { allPass, messages } = runAllChecks(
+        detection,
+        video.videoWidth,
+        video.videoHeight,
+        faceImageData
+      );
+
+      setQualityMessages(messages);
+      setAllCriteriaMet(allPass);
+
+      if (allPass) {
+        handleAllCriteriaMet(detection, faceImageData);
+      } else {
+        handleCriteriaFailed();
+      }
+    } catch (err) {
+      console.error('Detection error:', err);
+    }
   };
 
-  const submitEnrollment = async (frames) => {
+  const handleAllCriteriaMet = (detection, imageData) => {
+    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) {
+      return;
+    }
+
+    if (status !== STATUS.HOLDING && status !== STATUS.READY) {
+      startStableTimer();
+    }
+    
+    setStatus(STATUS.READY);
+  };
+
+  const handleCriteriaFailed = () => {
+    if (status === STATUS.COUNTDOWN || status === STATUS.CAPTURING) {
+      return;
+    }
+    
+    resetStableTimer();
+    setStatus(STATUS.SEARCHING);
+  };
+
+  const startStableTimer = () => {
+    clearTimers();
+    setStableTime(0);
+    
+    stableTimerRef.current = setInterval(() => {
+      setStableTime(prev => {
+        const newTime = prev + 100;
+        
+        if (newTime >= STABLE_TIME_REQUIRED) {
+          // Start countdown
+          startCountdown();
+          return STABLE_TIME_REQUIRED;
+        }
+        
+        return newTime;
+      });
+    }, 100);
+  };
+
+  const resetStableTimer = () => {
+    if (stableTimerRef.current) {
+      clearInterval(stableTimerRef.current);
+      stableTimerRef.current = null;
+    }
+    setStableTime(0);
+  };
+
+  const startCountdown = () => {
+    if (countdownTimeoutRef.current) {
+      clearTimeout(countdownTimeoutRef.current);
+    }
+    
+    setStatus(STATUS.HOLDING);
+    setCountdownValue(3);
+    
+    // Update status to holding after brief delay
+    countdownTimeoutRef.current = setTimeout(() => {
+      setStatus(STATUS.COUNTDOWN);
+      
+      // Countdown sequence: 3... 2... 1...
+      const countdownInterval = setInterval(() => {
+        setCountdownValue(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            startFlashCapture();
+            return 1;
+          }
+          return prev - 1;
+        });
+      }, COUNTDOWN_DURATION / 3);
+      
+      countdownTimeoutRef.current = setTimeout(() => {
+        clearInterval(countdownInterval);
+      }, COUNTDOWN_DURATION);
+    }, 500);
+  };
+
+  const startFlashCapture = async () => {
+    setStatus(STATUS.CAPTURING);
+    setCapturedFrames([]);
+    setFlashIndex(0);
+    
+    // Capture 4 frames with flash sequence
+    for (let i = 0; i < FLASH_COLORS.length; i++) {
+      await captureFrameWithFlash(i);
+    }
+    
+    // Process captured frames
+    await processCapturedFrames();
+  };
+
+  const captureFrameWithFlash = (index) => {
+    return new Promise(resolve => {
+      setFlashIndex(index);
+      setFlashColor(FLASH_COLORS[index]);
+      setFlashActive(true);
+      
+      // Capture frame data
+      setTimeout(() => {
+        if (videoRef.current) {
+          const detection = faceapi
+            .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks();
+          
+          if (detection) {
+            const descriptor = Array.from(detection.descriptor);
+            const imageData = captureFrameImageData(videoRef.current, detection.detection.box);
+            const brightness = imageData ? calculateBrightness(imageData) : 128;
+            
+            setCapturedFrames(prev => [...prev, {
+              descriptor,
+              imageData,
+              brightness,
+              flashColor: FLASH_COLORS[index]
+            }]);
+          }
+        }
+        
+        setFlashActive(false);
+        setTimeout(resolve, FLASH_DURATION);
+      }, FLASH_DURATION);
+    });
+  };
+
+  const calculateBrightness = (imageData) => {
+    const pixels = imageData.data;
+    let total = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      total += 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+    }
+    return total / (pixels.length / 4);
+  };
+
+  const processCapturedFrames = async () => {
+    setStatus(STATUS.PROCESSING);
+    
+    if (capturedFrames.length < 4) {
+      setError('Failed to capture all frames. Please try again.');
+      setStatus(STATUS.SEARCHING);
+      return;
+    }
+
+    // Run liveness detection
+    const livenessResult = detectLiveness(capturedFrames);
+    
+    console.log('Liveness result:', livenessResult);
+
+    if (!livenessResult.isLive) {
+      setError('Liveness check failed. Please try again with a real face (not a photo).');
+      setStatus(STATUS.SEARCHING);
+      setCapturedFrames([]);
+      resetStableTimer();
+      return;
+    }
+
+    // Submit to server
+    await submitEnrollment();
+  };
+
+  const submitEnrollment = async () => {
     setLoading(true);
 
     try {
-      const avgDescriptor = calculateAverageDescriptor(frames.map(f => f.descriptor));
+      const descriptors = capturedFrames.map(f => f.descriptor);
+      const avgDescriptor = calculateAverageDescriptor(descriptors);
+      const livenessScore = detectLiveness(capturedFrames).score;
 
       const response = await axios.post(`${API_URL}/api/register/face`, {
-        faceDescriptors: frames.map(f => f.descriptor),
-        averageDescriptor: avgDescriptor
+        faceDescriptors: descriptors,
+        averageDescriptor: avgDescriptor,
+        livenessScore
       }, {
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
       });
 
       if (response.data.success) {
-        setSuccess(true);
+        setStatus(STATUS.SUCCESS);
         updateUser({ faceEnrolled: true, employeeId: response.data.employeeId });
-        closeModal();
         setTimeout(() => navigate('/'), 2000);
       }
     } catch (err) {
+      console.error('Enrollment error:', err);
       setError(err.response?.data?.error || 'Face enrollment failed');
+      setStatus(STATUS.SEARCHING);
+      setCapturedFrames([]);
+      resetStableTimer();
     } finally {
       setLoading(false);
-      setCapturedFrames([]);
-      setCurrentStep(0);
     }
   };
 
@@ -312,11 +417,33 @@ function FaceEnrollmentPage() {
     return avg;
   };
 
-  const resetEnrollment = () => {
-    setCapturedFrames([]);
-    setCurrentStep(0);
-    setIsCapturing(false);
+  const handleRetry = () => {
     setError('');
+    setCapturedFrames([]);
+    setStatus(STATUS.SEARCHING);
+    resetStableTimer();
+  };
+
+  // Render status text
+  const renderStatusText = () => {
+    switch (status) {
+      case STATUS.SEARCHING:
+        return 'Position your face in the oval';
+      case STATUS.READY:
+        return '✓ Perfect - Hold still...';
+      case STATUS.HOLDING:
+        return '✓ Hold still...';
+      case STATUS.COUNTDOWN:
+        return '';
+      case STATUS.CAPTURING:
+        return `Capturing frame ${flashIndex + 1}...`;
+      case STATUS.PROCESSING:
+        return 'Processing...';
+      case STATUS.SUCCESS:
+        return '✓ Enrollment successful!';
+      default:
+        return '';
+    }
   };
 
   if (!user) {
@@ -331,7 +458,7 @@ function FaceEnrollmentPage() {
 
         {!modelsLoaded && <div style={styles.loading}>Loading models...</div>}
 
-        {success ? (
+        {status === STATUS.SUCCESS ? (
           <div style={styles.success}>
             <span style={styles.successIcon}>✓</span>
             <p>Face Enrollment Successful!</p>
@@ -340,30 +467,88 @@ function FaceEnrollmentPage() {
         ) : (
           <>
             <div style={styles.infoBox}>
-              <p style={styles.infoTitle}>📸 Face Enrollment Process</p>
+              <p style={styles.infoTitle}>📸 Single Face Enrollment</p>
               <p style={styles.infoText}>
-                For maximum security, we'll capture 5 images of your face from different angles.
-                This ensures accurate recognition when you clock in/out.
+                Position your face in the oval. The system will automatically capture
+                multiple frames with flash to verify liveness.
               </p>
               <ul style={styles.infoList}>
-                <li>Look straight ahead</li>
-                <li>Turn head slightly left</li>
-                <li>Turn head slightly right</li>
-                <li>Look up slightly</li>
-                <li>Look down slightly</li>
+                <li>Position face in the oval guide</li>
+                <li>Ensure good lighting</li>
+                <li>Keep head straight</li>
+                <li>Open your eyes</li>
+                <li>Hold still for auto-capture</li>
               </ul>
             </div>
 
-            {error && <div style={styles.error}>{error}</div>}
+            {error && (
+              <div style={styles.error}>
+                {error}
+                <button onClick={handleRetry} style={styles.retryBtn}>
+                  Try Again
+                </button>
+              </div>
+            )}
 
-            <button
-              type="button"
-              onClick={startCamera}
-              style={styles.submitBtn}
-              disabled={!modelsLoaded || loading}
-            >
-              {!modelsLoaded ? 'Loading Models...' : loading ? 'Processing...' : 'Start Camera & Begin Enrollment'}
-            </button>
+            {!cameraActive ? (
+              <button
+                type="button"
+                onClick={startCamera}
+                style={styles.submitBtn}
+                disabled={!modelsLoaded || loading}
+              >
+                {!modelsLoaded ? 'Loading Models...' : 'Start Camera'}
+              </button>
+            ) : (
+              <div style={styles.cameraContainer}>
+                {/* Notification Bar */}
+                <NotificationBar messages={qualityMessages} />
+
+                {/* Video Container with Face Oval */}
+                <div style={styles.videoWrapper}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={styles.video}
+                  />
+                  <canvas ref={canvasRef} style={styles.canvas} />
+                  
+                  {/* Face Oval Overlay */}
+                  <div style={styles.faceOvalOverlay}>
+                    <FaceOval
+                      allCriteriaMet={allCriteriaMet}
+                      stableTime={stableTime}
+                      countingDown={status === STATUS.COUNTDOWN}
+                      countdownValue={countdownValue}
+                      capturing={status === STATUS.CAPTURING ? flashIndex + 1 : false}
+                      status={status}
+                    />
+                  </div>
+                </div>
+
+                {/* Status Text */}
+                <div style={styles.statusText}>
+                  {renderStatusText()}
+                </div>
+
+                {/* Stop Camera Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCamera();
+                    clearTimers();
+                    setStatus(STATUS.SEARCHING);
+                    setCapturedFrames([]);
+                  }}
+                  style={styles.stopBtn}
+                  disabled={status === STATUS.CAPTURING || status === STATUS.PROCESSING}
+                >
+                  Stop Camera
+                </button>
+              </div>
+            )}
           </>
         )}
 
@@ -372,23 +557,11 @@ function FaceEnrollmentPage() {
         </button>
       </div>
 
-      {/* Camera Enrollment Modal */}
-      <CameraEnrollmentModal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        videoRef={videoRef}
-        canvasRef={canvasRef}
-        currentStep={currentStep}
-        setCurrentStep={setCurrentStep}
-        capturedFrames={capturedFrames}
-        setCapturedFrames={setCapturedFrames}
-        isCapturing={isCapturing}
-        setIsCapturing={setIsCapturing}
-        error={error}
-        setError={setError}
-        loading={loading}
-        onCapture={handleCapture}
-        onCancel={closeModal}
+      {/* Flash Overlay */}
+      <FlashOverlay
+        active={flashActive}
+        flashIndex={flashIndex}
+        flashColor={flashColor}
       />
     </div>
   );
@@ -462,6 +635,17 @@ const styles = {
     marginBottom: '16px',
     fontSize: '14px'
   },
+  retryBtn: {
+    marginTop: '8px',
+    padding: '6px 12px',
+    background: '#f87171',
+    color: '#000',
+    border: 'none',
+    borderRadius: '4px',
+    fontSize: '12px',
+    cursor: 'pointer',
+    fontWeight: '500'
+  },
   submitBtn: {
     width: '100%',
     padding: '14px',
@@ -491,6 +675,53 @@ const styles = {
     color: '#a3a3a3',
     marginTop: '8px'
   },
+  cameraContainer: {
+    position: 'relative'
+  },
+  videoWrapper: {
+    position: 'relative',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    border: '1px solid #262626',
+    background: '#000'
+  },
+  video: {
+    width: '100%',
+    display: 'block',
+    minHeight: '400px',
+    objectFit: 'cover'
+  },
+  canvas: {
+    display: 'none'
+  },
+  faceOvalOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    pointerEvents: 'none',
+    zIndex: 10
+  },
+  statusText: {
+    textAlign: 'center',
+    padding: '16px',
+    fontSize: '16px',
+    fontWeight: '500',
+    color: '#ffffff',
+    minHeight: '50px'
+  },
+  stopBtn: {
+    width: '100%',
+    padding: '12px',
+    background: '#1a1a1a',
+    color: '#737373',
+    border: '1px solid #262626',
+    borderRadius: '8px',
+    fontSize: '14px',
+    cursor: 'pointer',
+    marginTop: '12px',
+    transition: 'all 0.2s'
+  },
   backBtn: {
     display: 'block',
     width: '100%',
@@ -502,125 +733,6 @@ const styles = {
     color: '#737373',
     cursor: 'pointer',
     fontSize: '14px'
-  }
-};
-
-const modalStyles = {
-  overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0, 0, 0, 0.85)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-    padding: '20px',
-    backdropFilter: 'blur(4px)'
-  },
-  modal: {
-    background: '#141414',
-    borderRadius: '16px',
-    padding: '32px',
-    border: '1px solid #262626',
-    maxWidth: '600px',
-    width: '100%',
-    position: 'relative',
-    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-  },
-  closeBtn: {
-    position: 'absolute',
-    top: '16px',
-    right: '16px',
-    background: 'transparent',
-    border: 'none',
-    color: '#a3a3a3',
-    fontSize: '28px',
-    cursor: 'pointer',
-    width: '32px',
-    height: '32px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '8px',
-    transition: 'all 0.2s'
-  },
-  stepIndicator: {
-    fontSize: '14px',
-    color: '#737373',
-    marginBottom: '12px',
-    textAlign: 'center'
-  },
-  instructionBox: {
-    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
-    borderRadius: '12px',
-    padding: '20px',
-    marginBottom: '20px'
-  },
-  instructionText: {
-    fontSize: '18px',
-    fontWeight: '500',
-    color: '#ffffff',
-    textAlign: 'center',
-    margin: 0
-  },
-  videoContainer: {
-    marginBottom: '20px',
-    borderRadius: '12px',
-    overflow: 'hidden',
-    border: '1px solid #262626'
-  },
-  video: {
-    width: '100%',
-    display: 'block',
-    background: '#000'
-  },
-  canvas: {
-    display: 'none'
-  },
-  framesCaptured: {
-    fontSize: '14px',
-    color: '#a3a3a3',
-    marginBottom: '16px',
-    textAlign: 'center'
-  },
-  error: {
-    background: '#2a1a1a',
-    color: '#f87171',
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    fontSize: '14px',
-    textAlign: 'center'
-  },
-  buttonRow: {
-    display: 'flex',
-    gap: '12px'
-  },
-  cancelBtn: {
-    flex: 1,
-    padding: '14px',
-    background: '#1a1a1a',
-    color: '#737373',
-    border: '1px solid #262626',
-    borderRadius: '8px',
-    fontSize: '15px',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
-  },
-  captureBtn: {
-    flex: 2,
-    padding: '14px',
-    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'all 0.2s'
   }
 };
 
