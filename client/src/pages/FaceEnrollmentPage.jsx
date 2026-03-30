@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import FaceOval from '../components/FaceOval';
 import NotificationBar from '../components/NotificationBar';
 import FlashOverlay from '../components/FlashOverlay';
-import { checkDistance, checkPosition, checkTilt, checkEyesOpen, checkLighting, getFaceImageData } from '../utils/faceQuality';
+import { checkDistance, checkPosition, checkTilt, checkEyesOpen } from '../utils/faceQuality';
 import { detectLiveness, captureFrameImageData } from '../utils/liveness';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -51,7 +51,6 @@ function FaceEnrollmentPage() {
   const lastLandmarksRef = useRef(null);
   const frameCounterRef = useRef(0);
   const detectionStartTimeRef = useRef(0);
-  const lightingCacheRef = useRef(null);
   const messageDebounceRef = useRef(null);
   const lastMessageUpdateRef = useRef(0);
 
@@ -269,8 +268,7 @@ function FaceEnrollmentPage() {
         // Face lost - clear caches
         lastDetectionRef.current = null;
         lastLandmarksRef.current = null;
-        lightingCacheRef.current = null;
-        
+
         updateQualityMessages(['⚠️ NO FACE DETECTED']);
         setAllCriteriaMet(false);
         resetStableTimer();
@@ -310,18 +308,7 @@ function FaceEnrollmentPage() {
         // User will see "CENTER YOUR FACE" until landmarks load
       }
 
-      // Lighting check - run only once when face first detected
-      if (!lightingCacheRef.current) {
-        const ctx = canvas.getContext('2d');
-        const imageData = getFaceImageData(canvas, detection.detection.box);
-        if (imageData) {
-          const lightingResult = checkLighting(imageData);
-          lightingCacheRef.current = lightingResult.pass;
-          if (!lightingResult.pass) {
-            messages.push(lightingResult.message);
-          }
-        }
-      }
+      // Lighting check disabled - relies on device auto-exposure
 
       updateQualityMessages(messages);
       const allPass = messages.length === 0;
@@ -544,7 +531,6 @@ function FaceEnrollmentPage() {
     setCapturedFrames([]);
     setStatus(STATUS.SEARCHING);
     resetStableTimer();
-    lightingCacheRef.current = null;
     lastLandmarksRef.current = null;
     frameCounterRef.current = 0;
   };
@@ -650,7 +636,6 @@ function FaceEnrollmentPage() {
                     clearTimers();
                     setStatus(STATUS.SEARCHING);
                     setCapturedFrames([]);
-                    lightingCacheRef.current = null;
                     lastLandmarksRef.current = null;
                     frameCounterRef.current = 0;
                   }}
