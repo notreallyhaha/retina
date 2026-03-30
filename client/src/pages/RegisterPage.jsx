@@ -13,6 +13,75 @@ const ENROLLMENT_STEPS = [
   { instruction: 'Look down slightly', angle: 'down' }
 ];
 
+// Camera Modal Component
+function CameraEnrollmentModal({ 
+  isOpen, 
+  onClose, 
+  videoRef, 
+  canvasRef, 
+  currentStep, 
+  setCurrentStep,
+  capturedFrames, 
+  setCapturedFrames,
+  isCapturing,
+  setIsCapturing,
+  error,
+  setError,
+  loading,
+  onCapture,
+  onCancel 
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={modalStyles.overlay}>
+      <div style={modalStyles.modal}>
+        <button onClick={onClose} style={modalStyles.closeBtn}>×</button>
+        
+        <div style={modalStyles.stepIndicator}>
+          Step {currentStep + 1} of {ENROLLMENT_STEPS.length}
+        </div>
+
+        <div style={modalStyles.instructionBox}>
+          <p style={modalStyles.instructionText}>
+            {ENROLLMENT_STEPS[currentStep].instruction}
+          </p>
+        </div>
+
+        <div style={modalStyles.videoContainer}>
+          <video ref={videoRef} autoPlay playsInline style={modalStyles.video} />
+          <canvas ref={canvasRef} style={modalStyles.canvas} />
+        </div>
+
+        <div style={modalStyles.framesCaptured}>
+          Frames captured: {capturedFrames.length} / {ENROLLMENT_STEPS.length}
+        </div>
+
+        {error && <div style={modalStyles.error}>{error}</div>}
+
+        <div style={modalStyles.buttonRow}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={modalStyles.cancelBtn}
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onCapture}
+            style={modalStyles.captureBtn}
+            disabled={loading || isCapturing}
+          >
+            {isCapturing ? 'Capturing...' : `Capture Frame ${currentStep + 1}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RegisterPage() {
   const navigate = useNavigate();
   const videoRef = useRef(null);
@@ -25,9 +94,9 @@ function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   // Multi-frame enrollment state
   const [currentStep, setCurrentStep] = useState(0);
   const [capturedFrames, setCapturedFrames] = useState([]);
@@ -55,23 +124,23 @@ function RegisterPage() {
   const startCamera = async () => {
     try {
       console.log('Requesting camera access...');
-      
+
       // Check if getUserMedia is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not available. Make sure you are using HTTPS or localhost.');
       }
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       console.log('Camera access granted');
       videoRef.current.srcObject = stream;
-      setCameraActive(true);
+      setIsModalOpen(true);
     } catch (err) {
       console.error('Camera error:', err);
-      
+
       let errorMessage = 'Failed to access camera. ';
-      
+
       if (err.name === 'NotReadableError') {
         errorMessage = 'Camera is already in use. Close other apps (Zoom, Teams, etc.) and try again.';
       } else if (err.name === 'NotAllowedError') {
@@ -83,9 +152,20 @@ function RegisterPage() {
       } else {
         errorMessage += err.message;
       }
-      
+
       setError(errorMessage);
     }
+  };
+
+  const closeModal = () => {
+    // Stop camera stream
+    if (videoRef.current && videoRef.current.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsModalOpen(false);
+    resetEnrollment();
   };
 
   const getFaceDescriptor = async () => {
@@ -175,11 +255,11 @@ function RegisterPage() {
 
   const submitRegistration = async (frames) => {
     setLoading(true);
-    
+
     try {
       // Calculate average descriptor from all frames
       const avgDescriptor = calculateAverageDescriptor(frames.map(f => f.descriptor));
-      
+
       const response = await axios.post(`${API_URL}/api/register`, {
         name: formData.name,
         email: formData.email,
@@ -190,6 +270,7 @@ function RegisterPage() {
 
       if (response.data.success) {
         setSuccess(true);
+        closeModal();
         setTimeout(() => navigate('/'), 2000);
       }
     } catch (err) {
@@ -217,6 +298,7 @@ function RegisterPage() {
   const resetEnrollment = () => {
     setCapturedFrames([]);
     setCurrentStep(0);
+    setIsCapturing(false);
     setError('');
   };
 
@@ -224,7 +306,7 @@ function RegisterPage() {
     <div style={styles.container}>
       <div style={styles.card}>
         <h1 style={styles.title}>Secure Face Registration</h1>
-        
+
         {!modelsLoaded && <div style={styles.loading}>Loading models...</div>}
 
         {success ? (
@@ -233,101 +315,62 @@ function RegisterPage() {
             <p>Registration Successful</p>
           </div>
         ) : (
-          <form>
-            {!cameraActive ? (
-              <>
-                <div style={styles.formGroup}>
-                  <input
-                    type="text"
-                    placeholder="Full Name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    style={styles.input}
-                    required
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    style={styles.input}
-                  />
-                </div>
-                <div style={styles.formGroup}>
-                  <input
-                    type="text"
-                    placeholder="Employee ID"
-                    value={formData.employeeId}
-                    onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
-                    style={styles.input}
-                    required
-                  />
-                </div>
-                
-                <div style={styles.infoBox}>
-                  <p style={styles.infoTitle}>📸 Secure Enrollment Process</p>
-                  <p style={styles.infoText}>
-                    For maximum security, we'll capture 5 images of your face from different angles.
-                    This ensures accurate recognition when you clock in/out.
-                  </p>
-                  <ul style={styles.infoList}>
-                    <li>Look straight ahead</li>
-                    <li>Turn head slightly left</li>
-                    <li>Turn head slightly right</li>
-                    <li>Look up slightly</li>
-                    <li>Look down slightly</li>
-                  </ul>
-                </div>
+          <form onSubmit={(e) => e.preventDefault()}>
+            <div style={styles.formGroup}>
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
+                style={styles.input}
+                required
+              />
+            </div>
+            <div style={styles.formGroup}>
+              <input
+                type="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.formGroup}>
+              <input
+                type="text"
+                placeholder="Employee ID"
+                value={formData.employeeId}
+                onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+                style={styles.input}
+                required
+              />
+            </div>
 
-                <button type="button" onClick={startCamera} style={styles.submitBtn}>
-                  Start Camera & Begin Enrollment
-                </button>
-              </>
-            ) : (
-              <div style={styles.enrollmentSection}>
-                <div style={styles.stepIndicator}>
-                  Step {currentStep + 1} of {ENROLLMENT_STEPS.length}
-                </div>
-                
-                <div style={styles.instructionBox}>
-                  <p style={styles.instructionText}>
-                    {ENROLLMENT_STEPS[currentStep].instruction}
-                  </p>
-                </div>
+            <div style={styles.infoBox}>
+              <p style={styles.infoTitle}>📸 Secure Enrollment Process</p>
+              <p style={styles.infoText}>
+                For maximum security, we'll capture 5 images of your face from different angles.
+                This ensures accurate recognition when you clock in/out.
+              </p>
+              <ul style={styles.infoList}>
+                <li>Look straight ahead</li>
+                <li>Turn head slightly left</li>
+                <li>Turn head slightly right</li>
+                <li>Look up slightly</li>
+                <li>Look down slightly</li>
+              </ul>
+            </div>
 
-                <div style={styles.videoContainer}>
-                  <video ref={videoRef} autoPlay playsInline style={styles.video} />
-                  <canvas ref={canvasRef} style={styles.canvas} />
-                </div>
+            {error && <div style={styles.error}>{error}</div>}
 
-                <div style={styles.framesCaptured}>
-                  Frames captured: {capturedFrames.length} / {ENROLLMENT_STEPS.length}
-                </div>
-
-                {error && <div style={styles.error}>{error}</div>}
-
-                <div style={styles.buttonRow}>
-                  <button 
-                    type="button" 
-                    onClick={resetEnrollment}
-                    style={styles.cancelBtn}
-                    disabled={loading}
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={handleCapture}
-                    style={styles.captureBtn}
-                    disabled={loading || isCapturing}
-                  >
-                    {isCapturing ? 'Capturing...' : `Capture Frame ${currentStep + 1}`}
-                  </button>
-                </div>
-              </div>
-            )}
+            <button 
+              type="button" 
+              onClick={startCamera} 
+              style={styles.submitBtn}
+              disabled={!modelsLoaded}
+            >
+              {!modelsLoaded ? 'Loading Models...' : 'Start Camera & Begin Enrollment'}
+            </button>
           </form>
         )}
 
@@ -335,6 +378,25 @@ function RegisterPage() {
           Back to Home
         </button>
       </div>
+
+      {/* Camera Enrollment Modal */}
+      <CameraEnrollmentModal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        videoRef={videoRef}
+        canvasRef={canvasRef}
+        currentStep={currentStep}
+        setCurrentStep={setCurrentStep}
+        capturedFrames={capturedFrames}
+        setCapturedFrames={setCapturedFrames}
+        isCapturing={isCapturing}
+        setIsCapturing={setIsCapturing}
+        error={error}
+        setError={setError}
+        loading={loading}
+        onCapture={handleCapture}
+        onCancel={closeModal}
+      />
     </div>
   );
 }
@@ -406,42 +468,6 @@ const styles = {
     paddingLeft: '20px',
     lineHeight: '1.8'
   },
-  enrollmentSection: {
-    textAlign: 'center'
-  },
-  stepIndicator: {
-    fontSize: '14px',
-    color: '#737373',
-    marginBottom: '12px'
-  },
-  instructionBox: {
-    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
-    borderRadius: '8px',
-    padding: '16px',
-    marginBottom: '16px'
-  },
-  instructionText: {
-    fontSize: '16px',
-    fontWeight: '500',
-    color: '#ffffff'
-  },
-  videoContainer: {
-    marginBottom: '16px'
-  },
-  video: {
-    width: '100%',
-    borderRadius: '8px',
-    background: '#000',
-    border: '1px solid #262626'
-  },
-  canvas: {
-    display: 'none'
-  },
-  framesCaptured: {
-    fontSize: '14px',
-    color: '#a3a3a3',
-    marginBottom: '16px'
-  },
   error: {
     background: '#2a1a1a',
     color: '#f87171',
@@ -449,31 +475,6 @@ const styles = {
     borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px'
-  },
-  buttonRow: {
-    display: 'flex',
-    gap: '12px'
-  },
-  cancelBtn: {
-    flex: 1,
-    padding: '14px',
-    background: '#1a1a1a',
-    color: '#737373',
-    border: '1px solid #262626',
-    borderRadius: '8px',
-    fontSize: '15px',
-    cursor: 'pointer'
-  },
-  captureBtn: {
-    flex: 2,
-    padding: '14px',
-    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    fontSize: '15px',
-    fontWeight: '500',
-    cursor: 'pointer'
   },
   submitBtn: {
     width: '100%',
@@ -510,6 +511,125 @@ const styles = {
     color: '#737373',
     cursor: 'pointer',
     fontSize: '14px'
+  }
+};
+
+const modalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+    backdropFilter: 'blur(4px)'
+  },
+  modal: {
+    background: '#141414',
+    borderRadius: '16px',
+    padding: '32px',
+    border: '1px solid #262626',
+    maxWidth: '600px',
+    width: '100%',
+    position: 'relative',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: '16px',
+    right: '16px',
+    background: 'transparent',
+    border: 'none',
+    color: '#a3a3a3',
+    fontSize: '28px',
+    cursor: 'pointer',
+    width: '32px',
+    height: '32px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '8px',
+    transition: 'all 0.2s'
+  },
+  stepIndicator: {
+    fontSize: '14px',
+    color: '#737373',
+    marginBottom: '12px',
+    textAlign: 'center'
+  },
+  instructionBox: {
+    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
+    borderRadius: '12px',
+    padding: '20px',
+    marginBottom: '20px'
+  },
+  instructionText: {
+    fontSize: '18px',
+    fontWeight: '500',
+    color: '#ffffff',
+    textAlign: 'center',
+    margin: 0
+  },
+  videoContainer: {
+    marginBottom: '20px',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    border: '1px solid #262626'
+  },
+  video: {
+    width: '100%',
+    display: 'block',
+    background: '#000'
+  },
+  canvas: {
+    display: 'none'
+  },
+  framesCaptured: {
+    fontSize: '14px',
+    color: '#a3a3a3',
+    marginBottom: '16px',
+    textAlign: 'center'
+  },
+  error: {
+    background: '#2a1a1a',
+    color: '#f87171',
+    padding: '12px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    fontSize: '14px',
+    textAlign: 'center'
+  },
+  buttonRow: {
+    display: 'flex',
+    gap: '12px'
+  },
+  cancelBtn: {
+    flex: 1,
+    padding: '14px',
+    background: '#1a1a1a',
+    color: '#737373',
+    border: '1px solid #262626',
+    borderRadius: '8px',
+    fontSize: '15px',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  },
+  captureBtn: {
+    flex: 2,
+    padding: '14px',
+    background: 'linear-gradient(135deg, #5170ff 0%, #ff66c4 100%)',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '15px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
   }
 };
 
