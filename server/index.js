@@ -397,6 +397,16 @@ app.get('/', (req, res) => {
   });
 });
 
+// API test endpoint
+app.get('/api/test', (req, res) => {
+  console.log('API test endpoint requested');
+  res.json({
+    message: 'API is working!',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // ==================== ADMIN ROUTES ====================
 
 // Bulk upload employees (admin)
