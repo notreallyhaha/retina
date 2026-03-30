@@ -14,10 +14,24 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware - CORS configuration (must be first)
-const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*';
-
+// Use dynamic origin reflection to support credentials
 app.use(cors({
-  origin: allowedOrigins, // Use environment variable or allow all
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // In production, check against allowed origins or allow all if not configured
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',') 
+      : ['https://retina-rho.vercel.app', 'https://retina-git-main.vercel.app'];
+    
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked: ${origin} not in allowed list`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -29,7 +43,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Handle preflight OPTIONS requests explicitly
+// Handle preflight OPTIONS requests explicitly (extra safety)
 app.options('*', (req, res) => {
   const origin = req.get('Origin') || '*';
   console.log(`[${new Date().toISOString()}] OPTIONS preflight from origin: ${origin}`);
