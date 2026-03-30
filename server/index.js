@@ -23,6 +23,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// Request logging middleware to track all incoming requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} from ${req.ip}`);
+  next();
+});
+
 // Handle preflight OPTIONS requests explicitly
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', req.get('Origin') || '*');
@@ -438,11 +444,13 @@ app.post('/api/admin/bulk-upload', async (req, res) => {
 // Create HTTP server explicitly to keep event loop alive
 const server = app.listen(PORT, '0.0.0.0', () => {
   const timestamp = new Date().toISOString();
+  const startupTime = Date.now();
   console.log(`[${timestamp}] Server running on port ${PORT}`);
   console.log(`[${timestamp}] Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`[${timestamp}] Face Recognition Clock System Ready!`);
   console.log(`[${timestamp}] PID: ${process.pid}`);
   console.log(`[${timestamp}] Process uptime: ${process.uptime().toFixed(2)}s`);
+  console.log(`[${timestamp}] Startup timestamp: ${startupTime}`);
   
   // Log active handles - helps debug if process exits unexpectedly
   console.log(`[${timestamp}] Active handles: ${process._getActiveHandles ? process._getActiveHandles().length : 'N/A'}`);
