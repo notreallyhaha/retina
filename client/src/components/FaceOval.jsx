@@ -24,6 +24,7 @@ function FaceOval({
   const progressPercent = useMemo(() => {
     if (status === 'countdown') return 100;
     if (status === 'capturing') return 100;
+    if (status === 'holding') return 100; // Full progress when holding
     return Math.min(100, (stableTime / 2000) * 100);
   }, [stableTime, status]);
 
@@ -36,11 +37,12 @@ function FaceOval({
   }, [allCriteriaMet, countingDown, capturing]);
 
   // Calculate stroke dasharray for progress ring
-  // Oval circumference approximation: 2 * π * sqrt((rx² + ry²) / 2)
+  // Using Ramanujan's approximation for ellipse circumference
   const ovalRx = 120; // Horizontal radius
   const ovalRy = 160; // Vertical radius
-  const circumference = 2 * Math.PI * Math.sqrt((ovalRx * ovalRx + ovalRy * ovalRy) / 2);
-  const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
+  const h = Math.pow(ovalRx - ovalRy, 2) / Math.pow(ovalRx + ovalRy, 2);
+  const circumference = Math.PI * (ovalRx + ovalRy) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+  const strokeDashoffset = circumference * (1 - progressPercent / 100);
 
   return (
     <div style={styles.container}>
@@ -80,7 +82,7 @@ function FaceOval({
           style={{
             transition: 'stroke-dashoffset 0.1s linear, stroke 0.2s ease',
             transform: 'rotate(-90deg)',
-            transformOrigin: '150px 190px'
+            transformOrigin: '50% 50%'
           }}
         />
 

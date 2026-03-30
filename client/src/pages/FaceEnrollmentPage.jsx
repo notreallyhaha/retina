@@ -354,6 +354,8 @@ function FaceEnrollmentPage() {
       startStableTimer();
     }
     setStatus(STATUS.READY);
+    // Clear quality messages when all criteria are met
+    setQualityMessages([]);
   };
 
   const handleCriteriaFailed = () => {
