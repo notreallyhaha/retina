@@ -1,25 +1,29 @@
-FROM node:18-alpine
+FROM python:3.11-slim
 
-WORKDIR /app
-
-# Copy server package files
-COPY server/package*.json ./server/
-
-# Install server dependencies
 WORKDIR /app/server
-RUN npm install --production
+
+# Install system dependencies required by OpenCV
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libgomp1 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy server source code
-COPY server/ ./server/
+COPY server/ .
 
-# Set working directory to server
-WORKDIR /app/server
-
-# Expose port (Railway will override with PORT env var)
+# Expose port
 EXPOSE 8080
 
-# Set environment variables (don't override PORT - Railway sets this)
 ENV NODE_ENV=production
 
-# Start the server
-CMD ["node", "index.js"]
+# Start the FastAPI server
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
