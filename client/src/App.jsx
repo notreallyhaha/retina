@@ -8,6 +8,7 @@ import ClockInOutPage from './pages/ClockInOutPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUploadPage from './pages/AdminUploadPage';
 import AttendanceRecords from './pages/AttendanceRecords';
+import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 
 function App() {
   return (
@@ -19,9 +20,9 @@ function App() {
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="/face-enrollment" element={<FaceEnrollmentPage />} />
           <Route path="/clock" element={<ClockInOutPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/upload" element={<AdminUploadPage />} />
-          <Route path="/admin/records" element={<AttendanceRecords />} />
+          <Route path="/admin" element={<ProtectedAdminRoute><AdminDashboard /></ProtectedAdminRoute>} />
+          <Route path="/admin/upload" element={<ProtectedAdminRoute><AdminUploadPage /></ProtectedAdminRoute>} />
+          <Route path="/admin/records" element={<ProtectedAdminRoute><AttendanceRecords /></ProtectedAdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

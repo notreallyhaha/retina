@@ -76,6 +76,13 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
             raise HTTPException(status_code=401, detail="Invalid token")
 
 
+async def require_admin(current_user: dict = Depends(get_current_user)):
+    """Ensure current user is an admin."""
+    if not current_user.get("isAdmin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
 # ============================================
 # EXISTING ENDPOINTS (Android app compatibility)
 # ============================================
@@ -515,8 +522,8 @@ async def api_clock(
 # --- Admin Endpoints ---
 
 @app.get("/api/employees")
-async def api_list_employees():
-    """List all users from web_users where faceEnrolled=true."""
+async def api_list_employees(admin: dict = Depends(require_admin)):
+    """List all users from web_users. Admin only."""
     try:
         users = list_web_users(face_enrolled_only=False)
         result = []
@@ -527,6 +534,7 @@ async def api_list_employees():
                 "name": f"{u.get('firstName', '')} {u.get('lastName', '')}",
                 "email": u.get("email", ""),
                 "faceEnrolled": u.get("faceEnrolled", False),
+                "isAdmin": u.get("isAdmin", False),
                 "createdAt": str(u.get("createdAt", ""))
             })
         return result
@@ -535,9 +543,12 @@ async def api_list_employees():
 
 
 @app.delete("/api/employees/{employee_id}")
-async def api_delete_employee(employee_id: str):
-    """Delete user from Firebase Auth + remove from web_users."""
+async def api_delete_employee(employee_id: str, admin: dict = Depends(require_admin)):
+    """Delete user from Firebase Auth + remove from web_users. Admin only."""
     try:
+        # Prevent admin from deleting themselves
+        if employee_id == admin.get("id"):
+            raise HTTPException(status_code=400, detail="Cannot delete your own account")
         # Delete from Firebase Auth
         try:
             auth.delete_user(employee_id)
@@ -556,9 +567,10 @@ async def api_delete_employee(employee_id: str):
 async def api_records(
     employeeId: Optional[str] = None,
     startDate: Optional[str] = None,
-    endDate: Optional[str] = None
+    endDate: Optional[str] = None,
+    admin: dict = Depends(require_admin)
 ):
-    """Query web_attendance with filters."""
+    """Query web_attendance with filters. Admin only."""
     try:
         records = query_attendance_records(
             employee_id=employeeId,
@@ -583,8 +595,8 @@ async def api_records(
 
 
 @app.post("/api/admin/bulk-upload")
-async def api_bulk_upload(body: Request):
-    """Upload multiple employees with face descriptors."""
+async def api_bulk_upload(body: Request, admin: dict = Depends(require_admin)):
+    """Upload multiple employees with face descriptors. Admin only."""
     try:
         data = await body.json()
         employees = data.get("employees", [])

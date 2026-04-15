@@ -86,6 +86,7 @@ def create_web_user(uid: str, data: dict) -> dict:
         "email": data.get("email", ""),
         "employeeId": data.get("employeeId", ""),
         "faceEnrolled": False,
+        "isAdmin": False,
         "averageDescriptor": None,
         "descriptors": [],
         "createdAt": firestore.SERVER_TIMESTAMP

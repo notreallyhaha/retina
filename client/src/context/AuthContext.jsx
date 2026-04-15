@@ -117,6 +117,7 @@ export const AuthProvider = ({ children }) => {
     token,
     loading,
     isAuthenticated: !!user,
+    isAdmin: user?.isAdmin === true,
     register,
     login,
     loginWithToken,
