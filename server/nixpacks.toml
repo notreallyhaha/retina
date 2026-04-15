@@ -1,11 +1,9 @@
 [phases.setup]
 nixPkgs = ["python3"]
+aptPkgs = ["libxcb1", "libgl1", "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "libgomp1"]
 
 [phases.install]
-cmds = [
-  "apt-get update && apt-get install -y libxcb1 libgl1 libglib2.0-0 libsm6 libxrender1 libxext6 libgomp1",
-  "pip install -r requirements.txt"
-]
+cmds = ["pip install -r requirements.txt"]
 
 [phases.build]
 cmds = []
