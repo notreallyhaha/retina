@@ -1,11 +1,17 @@
 [phases.setup]
-nixPkgs = ["nodejs-18_x"]
+nixPkgs = ["python3"]
 
 [phases.install]
-cmds = ["npm install"]
+cmds = ["pip install -r requirements.txt"]
 
 [phases.build]
-cmds = ["echo 'Building...'"]
+cmds = []
 
 [start]
-cmd = "node index.js"
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
+[variables]
+PYTHON_VERSION = "3.11"
+
+[phases.setup.aptPkgs]
+"aptPkgs" = ["libgl1-mesa-glx", "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "libxcb1", "libgomp1"]

@@ -26,3 +26,9 @@ Thumbs.db
 # Uploads (keep directory, ignore contents)
 server/uploads/*
 !server/uploads/.gitkeep
+
+# Server runtime / DB files (Python backend)
+server/*.db
+server/*.pyc
+server/__pycache__/
+server/venv/

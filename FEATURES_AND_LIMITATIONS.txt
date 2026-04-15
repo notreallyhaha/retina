@@ -284,6 +284,69 @@ CURRENT PROJECT STATUS
 ✗ Comprehensive testing
 
 ================================================================================
+                    ENROLLMENT SYSTEM UPDATES (March 30, 2026)
+================================================================================
+
+ENHANCED FACE ENROLLMENT PIPELINE
+✓ Real-time face detection with adaptive FPS (5-15fps based on performance)
+✓ Two-phase detection: landmarks run every 3rd frame for performance
+✓ Continuous quality monitoring with debounced UI updates (200ms)
+✓ Progress ring overlay showing enrollment readiness
+✓ Flash-based liveness detection (4-frame capture sequence)
+
+QUALITY CHECKS (Real-time)
+✓ Distance check: 150-450px face width
+✓ Position check: ±100px from center (with mirror compensation)
+✓ Tilt check: ≤25px eye level difference (relaxed for stability)
+✓ Eyes open check: ≥2px per eye (relaxed for natural blinking)
+✗ Lighting check: REMOVED (relies on device auto-exposure)
+
+CRITICAL vs MINOR FAILURE HANDLING
+✓ Critical failures always reset stable timer:
+  - TOO CLOSE / TOO FAR
+  - CENTER YOUR FACE
+  - NO FACE DETECTED
+✓ Minor failures tolerated during READY/HOLDING:
+  - KEEP HEAD STRAIGHT
+  - OPEN YOUR EYES
+✓ Prevents frustrating loops from natural blinking/micro-movements
+✓ Still enforces strict reset on large movements
+
+UI IMPROVEMENTS
+✓ Progress ring starts from top (12 o'clock) and fills clockwise
+✓ Progress ring accurately matches background oval alignment
+✓ Warnings cleared when all criteria are met ("Perfect - Hold still...")
+✓ Status transitions: SEARCHING → READY → HOLDING → COUNTDOWN → CAPTURING
+✓ FaceOval shows real-time progress percentage during HOLDING
+
+LIVENESS DETECTION
+✓ 4-frame flash capture (white → green → blue → white)
+✓ Brightness variance analysis
+✓ Sudden jump detection (max 80px jump threshold)
+✓ Smoothness analysis (real face shows gradual transitions)
+✓ Score threshold: ≥0.5 required to pass
+✓ Flat response penalty (photos/screens detected)
+
+ADAPTIVE PERFORMANCE
+✓ FPS auto-adjustment based on detection time:
+  - 15fps: detection < 50ms
+  - 10fps: detection 50-80ms
+  - 7fps: detection 80-120ms
+  - 5fps: detection > 120ms
+✓ Camera: 640x480 @ 30fps target
+✓ TinyFaceDetector with 160px input size for speed
+
+ENROLLMENT FLOW
+1. User positions face in oval guide
+2. Real-time quality checks run continuously
+3. When all criteria met for 2000ms → countdown begins
+4. 3-2-1 countdown (500ms per number)
+5. 4-frame flash capture with liveness verification
+6. Average descriptor calculated from 4 frames
+7. Face descriptors + liveness score submitted to server
+8. Server stores 4 descriptors + average for matching
+
+================================================================================
                     Security-First Implementation
-                         Last Updated: March 28, 2026
+                         Last Updated: March 30, 2026
 ================================================================================

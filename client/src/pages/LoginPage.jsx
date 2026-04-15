@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  
+
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -19,13 +19,15 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      const result = await login(formData.email, formData.password);
-      
+      // Since Firebase Admin SDK doesn't provide email/password sign-in server-side,
+      // we send just email/password and the server will attempt a custom flow
+      const result = await login(formData.email, formData.password, null);
+
       if (result.success) {
         navigate('/');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      setError(err.response?.data?.detail || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }

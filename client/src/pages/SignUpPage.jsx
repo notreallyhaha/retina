@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { validatePassword, validateEmail, passwordsMatch } from '../utils/validatePassword';
+import { validatePassword, passwordsMatch } from '../utils/validatePassword';
 
 function SignUpPage() {
   const navigate = useNavigate();
   const { register } = useAuth();
-  
+
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: ''
@@ -17,11 +18,9 @@ function SignUpPage() {
   const [error, setError] = useState('');
   const [passwordValidation, setPasswordValidation] = useState(null);
 
-  // Check password strength as user types
   const handlePasswordChange = (e) => {
     const password = e.target.value;
     setFormData({ ...formData, password });
-    
     if (password) {
       setPasswordValidation(validatePassword(password));
     } else {
@@ -33,14 +32,12 @@ function SignUpPage() {
     e.preventDefault();
     setError('');
 
-    // Validate password
     const passwordResult = validatePassword(formData.password);
     if (!passwordResult.valid) {
       setError('Password does not meet requirements');
       return;
     }
 
-    // Validate passwords match
     const matchResult = passwordsMatch(formData.password, formData.confirmPassword);
     if (!matchResult.valid) {
       setError(matchResult.error);
@@ -50,17 +47,18 @@ function SignUpPage() {
     setLoading(true);
 
     try {
-      const result = await register(formData.name, formData.email, formData.password);
-      
+      const result = await register(
+        formData.firstName.trim(),
+        formData.lastName.trim(),
+        formData.email.trim(),
+        formData.password
+      );
+
       if (result.success) {
-        // Redirect to face enrollment
         navigate('/face-enrollment');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
-      if (err.response?.data?.details) {
-        setError(err.response.data.details.join(', '));
-      }
+      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,12 +71,20 @@ function SignUpPage() {
         <p style={styles.subtitle}>Join the face recognition clock system</p>
 
         <form onSubmit={handleSubmit}>
-          <div style={styles.formGroup}>
+          <div style={styles.nameRow}>
             <input
               type="text"
-              placeholder="Full Name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="First Name"
+              value={formData.firstName}
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              style={styles.input}
+              required
+            />
+            <input
+              type="text"
+              placeholder="Last Name"
+              value={formData.lastName}
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
               style={styles.input}
               required
             />
@@ -108,13 +114,13 @@ function SignUpPage() {
 
           {passwordValidation && (
             <div style={styles.passwordRequirements}>
-              <PasswordRequirement 
-                met={passwordValidation.errors.length === 0} 
-                text="Password meets all requirements"
-              />
-              {passwordValidation.errors.map((err, idx) => (
-                <PasswordRequirement key={idx} met={false} text={err} />
-              ))}
+              {passwordValidation.valid ? (
+                <PasswordRequirement met text="Password meets all requirements" />
+              ) : (
+                passwordValidation.errors.map((err, idx) => (
+                  <PasswordRequirement key={idx} met={false} text={err} />
+                ))
+              )}
             </div>
           )}
 
@@ -183,7 +189,7 @@ const styles = {
     borderRadius: '12px',
     padding: '40px',
     border: '1px solid #262626',
-    maxWidth: '400px',
+    maxWidth: '450px',
     width: '100%'
   },
   title: {
@@ -198,6 +204,11 @@ const styles = {
     fontSize: '14px',
     textAlign: 'center',
     marginBottom: '32px'
+  },
+  nameRow: {
+    display: 'flex',
+    gap: '12px',
+    marginBottom: '16px'
   },
   formGroup: {
     marginBottom: '16px'

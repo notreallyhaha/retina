@@ -45,7 +45,7 @@ function AttendanceRecords() {
 
   const handleClearFilters = () => {
     setFilters({ employeeId: '', startDate: '', endDate: '' });
-    fetchRecords();
+    setTimeout(() => fetchRecords(), 0);
   };
 
   return (
@@ -76,12 +76,8 @@ function AttendanceRecords() {
             onChange={handleFilterChange}
             style={styles.input}
           />
-          <button onClick={handleApplyFilters} style={styles.filterBtn}>
-            Apply
-          </button>
-          <button onClick={handleClearFilters} style={styles.clearBtn}>
-            Clear
-          </button>
+          <button onClick={handleApplyFilters} style={styles.filterBtn}>Apply</button>
+          <button onClick={handleClearFilters} style={styles.clearBtn}>Clear</button>
         </div>
 
         {loading ? (
@@ -95,7 +91,6 @@ function AttendanceRecords() {
                 <tr>
                   <th style={styles.th}>ID</th>
                   <th style={styles.th}>Employee ID</th>
-                  <th style={styles.th}>Name</th>
                   <th style={styles.th}>Type</th>
                   <th style={styles.th}>Timestamp</th>
                   <th style={styles.th}>Location</th>
@@ -104,21 +99,20 @@ function AttendanceRecords() {
               <tbody>
                 {records.map(record => (
                   <tr key={record.id}>
-                    <td style={styles.td}>#{record.id}</td>
-                    <td style={styles.td}>{record.employee_id}</td>
-                    <td style={styles.td}>{record.name}</td>
+                    <td style={styles.td}>#{record.id.slice(0, 8)}</td>
+                    <td style={styles.td}>{record.employeeId}</td>
                     <td style={styles.td}>
-                      <span style={record.type === 'in' ? styles.badgeIn : styles.badgeOut}>
-                        {record.type.toUpperCase()}
+                      <span style={record.type === 'IN' ? styles.badgeIn : styles.badgeOut}>
+                        {record.type}
                       </span>
                     </td>
                     <td style={styles.td}>
-                      {new Date(record.timestamp).toLocaleString()}
+                      {record.timestamp ? new Date(record.timestamp).toLocaleString() : '-'}
                     </td>
                     <td style={styles.td}>
                       {record.location ? (
-                        <a 
-                          href={`https://maps.google.com/?q=${JSON.parse(record.location).latitude},${JSON.parse(record.location).longitude}`}
+                        <a
+                          href={`https://maps.google.com/?q=${record.location.latitude},${record.location.longitude}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={styles.locationLink}

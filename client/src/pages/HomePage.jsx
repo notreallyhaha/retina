@@ -13,7 +13,7 @@ function HomePage() {
         {isAuthenticated ? (
           <div>
             <div style={styles.userSection}>
-              <p style={styles.welcomeText}>Welcome back, {user?.name}!</p>
+              <p style={styles.welcomeText}>Welcome back, {user?.firstName} {user?.lastName}!</p>
               {user?.employeeId && (
                 <p style={styles.employeeId}>Employee ID: {user.employeeId}</p>
               )}

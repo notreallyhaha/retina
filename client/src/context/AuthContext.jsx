@@ -18,21 +18,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('token'));
 
-  // Check if user is authenticated on mount
   useEffect(() => {
     const initAuth = async () => {
       const storedToken = localStorage.getItem('token');
-      
       if (!storedToken) {
         setLoading(false);
         return;
       }
-
       try {
         const response = await axios.get(`${API_URL}/api/auth/me`, {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
-
         if (response.data.success) {
           setUser(response.data.user);
           setToken(storedToken);
@@ -40,26 +36,23 @@ export const AuthProvider = ({ children }) => {
           localStorage.removeItem('token');
           setToken(null);
         }
-      } catch (error) {
-        console.error('Auth check failed:', error);
+      } catch {
         localStorage.removeItem('token');
         setToken(null);
       } finally {
         setLoading(false);
       }
     };
-
     initAuth();
   }, []);
 
-  // Register new user
-  const register = async (name, email, password) => {
+  const register = async (firstName, lastName, email, password) => {
     const response = await axios.post(`${API_URL}/api/auth/register`, {
-      name,
+      firstName,
+      lastName,
       email,
       password
     });
-
     if (response.data.success) {
       const { token: newToken, user: newUser } = response.data;
       localStorage.setItem('token', newToken);
@@ -69,13 +62,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Login user
-  const login = async (email, password) => {
+  const login = async (email, password, firebaseToken) => {
     const response = await axios.post(`${API_URL}/api/auth/login`, {
       email,
-      password
+      password,
+      firebaseToken,
+      token: firebaseToken
     });
-
     if (response.data.success) {
       const { token: newToken, user: newUser } = response.data;
       localStorage.setItem('token', newToken);
@@ -85,7 +78,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Logout user
+  const loginWithToken = async (firebaseToken) => {
+    const response = await axios.post(`${API_URL}/api/auth/login`, {
+      firebaseToken,
+      token: firebaseToken
+    });
+    if (response.data.success) {
+      const { token: newToken, user: newUser } = response.data;
+      localStorage.setItem('token', newToken);
+      setToken(newToken);
+      setUser(newUser);
+      return { success: true, user: newUser };
+    }
+  };
+
   const logout = async () => {
     try {
       if (token) {
@@ -93,8 +99,8 @@ export const AuthProvider = ({ children }) => {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch {
+      console.error('Logout error');
     } finally {
       localStorage.removeItem('token');
       setToken(null);
@@ -102,7 +108,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Update user data (e.g., after face enrollment)
   const updateUser = (updates) => {
     setUser(prev => ({ ...prev, ...updates }));
   };
@@ -114,6 +119,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
     register,
     login,
+    loginWithToken,
     logout,
     updateUser
   };
