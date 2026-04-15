@@ -1,6 +1,6 @@
 [phases.setup]
 nixPkgs = ["python311"]
-aptPkgs = ["libgl1", "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "libgomp1", "libxcb1"]
+aptPkgs = ["libxcb1", "libxkbcommon0", "libgl1-mesa-glx", "libgl1", "libglib2.0-0", "libsm6", "libxrender1", "libxext6", "libgomp1"]
 
 [start]
 cmd = "cd server && uvicorn main:app --host 0.0.0.0 --port $PORT"
