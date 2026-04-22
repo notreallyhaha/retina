@@ -1,0 +1,9 @@
+{
+  "name": "face-recognition-clock-root",
+  "version": "1.0.0",
+  "scripts": {
+    "start:client": "cd client && npm run dev",
+    "install:all": "cd client && npm install",
+    "install:server": "pip install -r server/requirements.txt"
+  }
+}
