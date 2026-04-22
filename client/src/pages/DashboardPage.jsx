@@ -120,7 +120,7 @@ function buildWeekData(records, mondayDate) {
 }
 
 // ── Photo lightbox ────────────────────────────────────────────
-function PhotoLightbox({ src, onClose }) {
+function PhotoLightbox({ src, onClose, faceScan = false }) {
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -129,7 +129,7 @@ function PhotoLightbox({ src, onClose }) {
   return (
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.92)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}}>
       <div onClick={e=>e.stopPropagation()} style={{position:'relative',maxWidth:'min(90vw,600px)',maxHeight:'85vh',display:'flex',flexDirection:'column',alignItems:'center',gap:'12px'}}>
-        <img src={src} alt="Proof photo" style={{maxWidth:'100%',maxHeight:'75vh',borderRadius:'12px',objectFit:'contain',border:'1px solid #2a2a2a'}}/>
+        <img src={src} alt="Proof photo" style={{maxWidth:'100%',maxHeight:'75vh',borderRadius:'12px',objectFit:'contain',border:'1px solid #2a2a2a',transform:faceScan?'scaleX(-1)':'none'}}/>
         <button onClick={onClose} style={{background:'#1a1a1a',border:'1px solid #2a2a2a',color:'#aaa',fontSize:'12px',fontWeight:'700',padding:'8px 20px',borderRadius:'100px',cursor:'pointer',letterSpacing:'0.04em'}}>Close</button>
       </div>
     </div>
@@ -313,7 +313,7 @@ function RealShiftProofRow({ inPhoto, outPhoto }) {
   const [lightboxSrc, setLightboxSrc] = useState(null);
   return (
     <div style={m.proofRow}>
-      {lightboxSrc && <PhotoLightbox src={lightboxSrc} onClose={()=>setLightboxSrc(null)}/>}
+      {lightboxSrc && <PhotoLightbox src={lightboxSrc} faceScan={true} onClose={()=>setLightboxSrc(null)}/>}
       {['in','out'].map(side => {
         const src = side==='in' ? inPhoto : outPhoto;
         return (
@@ -325,7 +325,7 @@ function RealShiftProofRow({ inPhoto, outPhoto }) {
             <div style={m.proofBody}>
               {src ? (
                 <div onClick={()=>setLightboxSrc(src)} style={{...m.photoPreview, cursor:'pointer', padding:0, overflow:'hidden'}}>
-                  <img src={src} alt={`clock ${side} proof`} style={{width:'100%',height:'72px',objectFit:'cover',borderRadius:'7px',display:'block'}}/>
+                  <img src={src} alt={`clock ${side} proof`} style={{width:'100%',height:'72px',objectFit:'cover',borderRadius:'7px',display:'block',transform:'scaleX(-1)'}}/>
                 </div>
               ) : (
                 <div style={{...m.photoUpload, cursor:'default', borderColor:'#1a1a1a'}}>
@@ -951,7 +951,7 @@ function DashboardPage() {
 
           {activeTab==='activity'?(
             <div style={s.activityFeed}>
-              {activityLightbox && <PhotoLightbox src={activityLightbox.src} onClose={()=>setActivityLightbox(null)}/>}
+              {activityLightbox && <PhotoLightbox src={activityLightbox.src} faceScan={true} onClose={()=>setActivityLightbox(null)}/>}
               {loading ? (
                 <p style={s.emptyMsg}>Loading records...</p>
               ) : records.length===0 ? (

@@ -89,7 +89,7 @@ function Avatar({ name, size = 32 }) {
 }
 
 // ── Photo lightbox ────────────────────────────────────────────
-function Lightbox({ src, onClose }) {
+function Lightbox({ src, onClose, faceScan = false }) {
   useEffect(() => {
     const h = e => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', h);
@@ -97,22 +97,22 @@ function Lightbox({ src, onClose }) {
   }, [onClose]);
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <img src={src} alt="proof" onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 12, objectFit: 'contain', boxShadow: '0 24px 64px rgba(0,0,0,0.8)' }} />
+      <img src={src} alt="proof" onClick={e => e.stopPropagation()} style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 12, objectFit: 'contain', boxShadow: '0 24px 64px rgba(0,0,0,0.8)', transform: faceScan ? 'scaleX(-1)' : 'none' }} />
       <button onClick={onClose} style={{ position: 'absolute', top: 20, right: 20, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: 20, borderRadius: 8, width: 36, height: 36, cursor: 'pointer' }}>✕</button>
     </div>
   );
 }
 
 // ── Proof thumb ───────────────────────────────────────────────
-function ProofThumb({ url, label }) {
+function ProofThumb({ url, label, faceScan = false }) {
   const [open, setOpen] = useState(false);
   if (!url || !url.startsWith('data:')) return <span style={{ fontSize: 11, color: '#333' }}>—</span>;
   return (
     <>
       <div onClick={() => setOpen(true)} style={{ cursor: 'pointer', display: 'inline-block' }}>
-        <img src={url} alt={label} style={{ height: 48, width: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', transition: 'opacity 0.15s' }} />
+        <img src={url} alt={label} style={{ height: 48, width: 64, objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', transition: 'opacity 0.15s', transform: faceScan ? 'scaleX(-1)' : 'none' }} />
       </div>
-      {open && <Lightbox src={url} onClose={() => setOpen(false)} />}
+      {open && <Lightbox src={url} onClose={() => setOpen(false)} faceScan={faceScan} />}
     </>
   );
 }
@@ -269,8 +269,8 @@ function PendingApprovals({ pending, onApprove, onReject, loading }) {
                   <img
                     src={rec.proofPhotoUrl}
                     alt="proof"
-                    onClick={() => setLightbox(rec.proofPhotoUrl)}
-                    style={{ height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}
+                    onClick={() => setLightbox({src: rec.proofPhotoUrl, faceScan: true})}
+                    style={{ height: 80, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', transform: 'scaleX(-1)' }}
                   />
                 </div>
               )}
@@ -302,7 +302,7 @@ function PendingApprovals({ pending, onApprove, onReject, loading }) {
           );
         })}
       </div>
-      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox src={lightbox.src} faceScan={lightbox.faceScan} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
@@ -573,13 +573,13 @@ function EmployeeProfile({ emp, onClose }) {
                             <div>
                               <div style={S.metaLabel}>In Proof</div>
                               {sess.inRec.proofPhotoUrl?.startsWith('data:')
-                                ? <img src={sess.inRec.proofPhotoUrl} alt="in proof" onClick={() => setLightbox(sess.inRec.proofPhotoUrl)} style={{ height: 56, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
+                                ? <img src={sess.inRec.proofPhotoUrl} alt="in proof" onClick={() => setLightbox({src: sess.inRec.proofPhotoUrl, faceScan: true})} style={{ height: 56, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3, transform: 'scaleX(-1)' }}/>
                                 : <div style={{ fontSize: 10, color: '#333', marginTop: 3 }}>—</div>}
                             </div>
                             <div>
                               <div style={S.metaLabel}>Out Proof</div>
                               {sess.outRec?.proofPhotoUrl?.startsWith('data:')
-                                ? <img src={sess.outRec.proofPhotoUrl} alt="out proof" onClick={() => setLightbox(sess.outRec.proofPhotoUrl)} style={{ height: 56, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
+                                ? <img src={sess.outRec.proofPhotoUrl} alt="out proof" onClick={() => setLightbox({src: sess.outRec.proofPhotoUrl, faceScan: true})} style={{ height: 56, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3, transform: 'scaleX(-1)' }}/>
                                 : <div style={{ fontSize: 10, color: '#333', marginTop: 3 }}>—</div>}
                             </div>
                           </div>
@@ -613,14 +613,14 @@ function EmployeeProfile({ emp, onClose }) {
                           <div>
                             <div style={S.metaLabel}>Clock In Proof</div>
                             {r.clockInProofUrl?.startsWith('data:')
-                              ? <img src={r.clockInProofUrl} alt="in" onClick={() => setLightbox(r.clockInProofUrl)} style={{ height: 52, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
+                              ? <img src={r.clockInProofUrl} alt="in" onClick={() => setLightbox({src: r.clockInProofUrl, faceScan: false})} style={{ height: 52, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
                               : r.clockInNote ? <div style={{ fontSize: 10, color: '#777', marginTop: 3, fontStyle: 'italic' }}>{r.clockInNote}</div>
                               : <div style={{ fontSize: 10, color: '#333', marginTop: 3 }}>—</div>}
                           </div>
                           <div>
                             <div style={S.metaLabel}>Clock Out Proof</div>
                             {r.clockOutProofUrl?.startsWith('data:')
-                              ? <img src={r.clockOutProofUrl} alt="out" onClick={() => setLightbox(r.clockOutProofUrl)} style={{ height: 52, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
+                              ? <img src={r.clockOutProofUrl} alt="out" onClick={() => setLightbox({src: r.clockOutProofUrl, faceScan: false})} style={{ height: 52, width: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', marginTop: 3 }}/>
                               : r.clockOutNote ? <div style={{ fontSize: 10, color: '#777', marginTop: 3, fontStyle: 'italic' }}>{r.clockOutNote}</div>
                               : <div style={{ fontSize: 10, color: '#333', marginTop: 3 }}>—</div>}
                           </div>
@@ -733,8 +733,8 @@ function EmployeeProfile({ emp, onClose }) {
                           {/* Photos */}
                           <td style={S.td}>
                             <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
-                              {sess.inRec.proofPhotoUrl?.startsWith('data:')   && <ProofThumb url={sess.inRec.proofPhotoUrl}    label="in proof"/>}
-                              {sess.outRec?.proofPhotoUrl?.startsWith('data:') && <ProofThumb url={sess.outRec.proofPhotoUrl}   label="out proof"/>}
+                              {sess.inRec.proofPhotoUrl?.startsWith('data:')   && <ProofThumb url={sess.inRec.proofPhotoUrl}    label="in proof"  faceScan={true}/>}
+                              {sess.outRec?.proofPhotoUrl?.startsWith('data:') && <ProofThumb url={sess.outRec.proofPhotoUrl}   label="out proof" faceScan={true}/>}
                               {!sess.inRec.proofPhotoUrl && !sess.outRec?.proofPhotoUrl && <span style={{fontSize:11,color:'#333'}}>—</span>}
                             </div>
                           </td>
@@ -774,7 +774,7 @@ function EmployeeProfile({ emp, onClose }) {
           )}
         </div>
       </div>
-      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox src={lightbox.src} faceScan={lightbox.faceScan} onClose={() => setLightbox(null)} />}
       {toast && (
         <div style={{ position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)', padding: '10px 18px', borderRadius: 10, border: '1px solid', fontSize: 13, fontWeight: 600, zIndex: 10000,
           ...(toast.ok ? { background:'rgba(64,217,160,0.15)', borderColor:'rgba(64,217,160,0.3)', color:'#40d9a0' } : { background:'rgba(239,68,68,0.12)', borderColor:'rgba(239,68,68,0.3)', color:'#f87171' }) }}>
@@ -897,7 +897,7 @@ function Records({ employees }) {
                   </td>
                   <td style={S.td}>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {r.proofPhotoUrl?.startsWith('data:')    && <ProofThumb url={r.proofPhotoUrl}    label="proof"/>}
+                      {r.proofPhotoUrl?.startsWith('data:')    && <ProofThumb url={r.proofPhotoUrl}    label="proof" faceScan={true}/>}
                       {r.clockInProofUrl?.startsWith('data:')  && <ProofThumb url={r.clockInProofUrl}  label="in"/>}
                       {r.clockOutProofUrl?.startsWith('data:') && <ProofThumb url={r.clockOutProofUrl} label="out"/>}
                       {!r.proofPhotoUrl && !r.clockInProofUrl && !r.clockOutProofUrl && <span style={{ fontSize:11, color:'#333' }}>—</span>}
@@ -914,7 +914,7 @@ function Records({ employees }) {
           Select filters and click Fetch Records
         </div>
       )}
-      {lightbox && <Lightbox src={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && <Lightbox src={lightbox.src} faceScan={lightbox.faceScan} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
