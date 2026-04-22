@@ -736,6 +736,7 @@ async def api_my_records(current_user: dict = Depends(get_current_user)):
                 "clockOutProofType": r.get("clockOutProofType"),
                 "clockOutProofUrl": r.get("clockOutProofUrl"),
                 "clockOutNote": r.get("clockOutNote"),
+                "proofPhotoUrl": r.get("proofPhotoUrl"),
             })
         return result
     except HTTPException:
