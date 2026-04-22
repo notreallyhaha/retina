@@ -578,8 +578,8 @@ function TimesheetPanel({ records, weekOffset, isClockedIn }) {
       otRecord: otRecord ?? day.otRecord,
       regular: day.regular,
       ot: day.ot,
-      inProofPhoto: inRec?.proofPhoto || null,
-      outProofPhoto: outRec?.proofPhoto || null,
+      inProofPhoto: inRec?.proofPhotoUrl || null,
+      outProofPhoto: outRec?.proofPhotoUrl || null,
     });
 
     if (!day.hasShift && day.manualRecords.length === 0) {
@@ -1023,16 +1023,16 @@ function DashboardPage() {
                                   : <div style={{fontSize:10,color:'#555',fontStyle:'italic'}}>—</div>}
                               <div style={{fontSize:9,color:'#383838',marginTop:1}}>{fmtDate(sess.inRec.timestamp)}</div>
                             </div>
-                            {(sess.inRec.proofPhoto || (sess.outRec && sess.outRec.proofPhoto)) && (
+                            {(sess.inRec.proofPhotoUrl || (sess.outRec && sess.outRec.proofPhotoUrl)) && (
                               <div style={{display:'flex',flexDirection:'column',gap:3,flexShrink:0}}>
-                                {sess.inRec.proofPhoto && (
-                                  <button onClick={()=>setActivityLightbox({src:sess.inRec.proofPhoto,label:'Clock In'})} style={{background:'rgba(64,217,160,0.08)',border:'1px solid rgba(64,217,160,0.2)',borderRadius:5,padding:'3px 7px',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                                {sess.inRec.proofPhotoUrl && (
+                                  <button onClick={()=>setActivityLightbox({src:sess.inRec.proofPhotoUrl,label:'Clock In'})} style={{background:'rgba(64,217,160,0.08)',border:'1px solid rgba(64,217,160,0.2)',borderRadius:5,padding:'3px 7px',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
                                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#40d9a0" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                     <span style={{fontSize:8,fontWeight:700,color:'#40d9a0',letterSpacing:'0.04em'}}>IN</span>
                                   </button>
                                 )}
-                                {sess.outRec?.proofPhoto && (
-                                  <button onClick={()=>setActivityLightbox({src:sess.outRec.proofPhoto,label:'Clock Out'})} style={{background:'rgba(160,140,255,0.08)',border:'1px solid rgba(160,140,255,0.2)',borderRadius:5,padding:'3px 7px',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                                {sess.outRec?.proofPhotoUrl && (
+                                  <button onClick={()=>setActivityLightbox({src:sess.outRec.proofPhotoUrl,label:'Clock Out'})} style={{background:'rgba(160,140,255,0.08)',border:'1px solid rgba(160,140,255,0.2)',borderRadius:5,padding:'3px 7px',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
                                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#a08cff" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                                     <span style={{fontSize:8,fontWeight:700,color:'#a08cff',letterSpacing:'0.04em'}}>OUT</span>
                                   </button>
