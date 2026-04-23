@@ -92,23 +92,36 @@ function buildWeekData(records, mondayDate) {
       if (sess.isOt) {
         day.ot += durH;
       } else {
-        day.regular += Math.min(durH, 8);
-        day.ot      += Math.max(0, durH - 8);
+        day.regular += durH;
       }
       day.hasRealShift = true;
       if (sess.outRec) day.approvedRecords.push({in: sess.inTs, out: sess.outTs});
     }
   }
 
-  // Manual entries — tracked separately
+  // Manual entries — tracked separately, and approved ones add to hours
   for (const r of records) {
-    if (r.type === 'MANUAL') {
+    if (r.type === 'MANUAL' || r.type === 'OT_MANUAL') {
       const day = days.find(d => d.key === r.manualDate);
-      if (day) day.manualRecords.push(r);
-    }
-    if (r.type === 'OT_MANUAL') {
-      const day = days.find(d => d.key === r.manualDate);
-      if (day) day.otRecord = r;
+      if (!day) continue;
+      if (r.type === 'MANUAL') day.manualRecords.push(r);
+      if (r.type === 'OT_MANUAL') day.otRecord = r;
+      // Count hours if approved
+      if (COUNTS_STATUS(r.status) && r.clockInTime && r.clockOutTime) {
+        try {
+          const inMs  = new Date(`${r.manualDate}T${r.clockInTime}`).getTime();
+          let outMs   = new Date(`${r.manualDate}T${r.clockOutTime}`).getTime();
+          if (r.clockOutNextDay) outMs += 86400000;
+          const durH = (outMs - inMs) / 3600000;
+          if (!isNaN(durH) && durH > 0) {
+            if (r.type === 'OT_MANUAL') {
+              day.ot += durH;
+            } else {
+              day.regular += durH;
+            }
+          }
+        } catch {}
+      }
     }
   }
 
@@ -805,7 +818,18 @@ function DashboardPage() {
     .sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp))[0];
   const totalHoursAllTime = (()=>{
     const sessions = pairRecords(records);
-    const ms = sessions.reduce((acc, sess) => acc + sessionHours(sess, now.getTime()) * 3600000, 0);
+    let ms = sessions.reduce((acc, sess) => acc + sessionHours(sess, now.getTime()) * 3600000, 0);
+    // Add approved MANUAL / OT_MANUAL entries
+    for (const r of records) {
+      if ((r.type === 'MANUAL' || r.type === 'OT_MANUAL') && COUNTS_STATUS(r.status) && r.manualDate && r.clockInTime && r.clockOutTime) {
+        try {
+          const inMs  = new Date(`${r.manualDate}T${r.clockInTime}`).getTime();
+          let outMs   = new Date(`${r.manualDate}T${r.clockOutTime}`).getTime();
+          if (r.clockOutNextDay) outMs += 86400000;
+          if (!isNaN(inMs) && !isNaN(outMs) && outMs > inMs) ms += (outMs - inMs);
+        } catch {}
+      }
+    }
     const h=Math.floor(ms/3600000), mn=Math.floor((ms%3600000)/60000);
     return ms>0?`${h}h ${mn}m`:'—';
   })();
