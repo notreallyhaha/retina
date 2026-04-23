@@ -920,7 +920,7 @@ function Records({ employees }) {
 }
 
 // ── Main AdminDashboard ───────────────────────────────────────
-export default function AdminDashboard() {
+export default function AdminDashboard({ onSignOut }) {
   const [tab, setTab] = useState('overview');
   const [employees, setEmployees] = useState([]);
   const [pending, setPending] = useState([]);
@@ -1035,7 +1035,19 @@ export default function AdminDashboard() {
           ))}
         </nav>
         <div style={S.sidebarFooter}>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', lineHeight: 1.6 }}>Retina Attendance<br/>Admin Panel</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.15)', lineHeight: 1.6, marginBottom: 10 }}>Retina Attendance<br/>Admin Panel</div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('token');
+              onSignOut?.();
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.06)', color: '#f87171', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+            Sign Out
+          </button>
         </div>
       </aside>
 

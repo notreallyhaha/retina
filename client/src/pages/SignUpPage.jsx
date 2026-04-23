@@ -20,6 +20,8 @@ function SignUpPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [passwordValidation, setPasswordValidation] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handlePasswordChange = (e) => {
     const password = e.target.value;
@@ -76,7 +78,12 @@ function SignUpPage() {
 
           <div style={styles.field}>
             <label style={styles.label} htmlFor="password">Password</label>
-            <input id="password" type="password" placeholder="Create a strong password" value={formData.password} onChange={handlePasswordChange} style={styles.input} required />
+            <div style={styles.inputWrapper}>
+              <input id="password" type={showPassword ? 'text' : 'password'} placeholder="Create a strong password" value={formData.password} onChange={handlePasswordChange} style={styles.inputInner} required />
+              <button type="button" onClick={() => setShowPassword(v => !v)} style={styles.eyeBtn} tabIndex={-1}>
+                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
 
             {passwordValidation && (
               <div style={styles.passwordRequirements}>
@@ -93,7 +100,12 @@ function SignUpPage() {
 
           <div style={styles.field}>
             <label style={styles.label} htmlFor="confirmPassword">Confirm password</label>
-            <input id="confirmPassword" type="password" placeholder="Re-enter your password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} style={styles.input} required />
+            <div style={styles.inputWrapper}>
+              <input id="confirmPassword" type={showConfirmPassword ? 'text' : 'password'} placeholder="Re-enter your password" value={formData.confirmPassword} onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })} style={styles.inputInner} required />
+              <button type="button" onClick={() => setShowConfirmPassword(v => !v)} style={styles.eyeBtn} tabIndex={-1}>
+                {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -127,29 +139,43 @@ function SignUpPage() {
   );
 }
 
+const EyeIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
+);
+
+const EyeOffIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/>
+    <line x1="1" y1="1" x2="23" y2="23"/>
+  </svg>
+);
+
 const PasswordRequirement = ({ met, text }) => (
   <div style={{
     display: 'flex',
     alignItems: 'center',
     gap: '8px',
     fontSize: '11px',
-    color: met ? '#86efac' : '#737373',
+    color: met ? '#86efac' : '#f87171',
     marginBottom: '4px'
   }}>
     <span style={{
       width: '14px',
       height: '14px',
       borderRadius: '4px',
-      border: met ? '1.5px solid #22c55e' : '1.5px solid #404040',
-      background: met ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+      border: met ? '1.5px solid #22c55e' : '1.5px solid rgba(239,68,68,0.5)',
+      background: met ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239,68,68,0.12)',
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
       fontSize: '9px',
-      color: '#22c55e',
+      color: met ? '#22c55e' : '#f87171',
       flexShrink: 0
     }}>
-      {met ? '✓' : ''}
+      {met ? '✓' : '✕'}
     </span>
     <span>{text}</span>
   </div>
@@ -217,6 +243,35 @@ const styles = {
     fontSize: '14px',
     color: '#ffffff',
     outline: 'none'
+  },
+  inputWrapper: {
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  inputInner: {
+    width: '100%',
+    padding: '11px 40px 11px 14px',
+    background: '#0a0a0a',
+    border: '1px solid #1f1f1f',
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: '#ffffff',
+    outline: 'none',
+    boxSizing: 'border-box',
+  },
+  eyeBtn: {
+    position: 'absolute',
+    right: '12px',
+    background: 'transparent',
+    border: 'none',
+    color: '#525252',
+    cursor: 'pointer',
+    padding: '2px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
   },
   passwordRequirements: {
     background: '#0a0a0a',
