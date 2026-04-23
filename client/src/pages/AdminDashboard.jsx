@@ -388,7 +388,18 @@ function EmployeeProfile({ emp, onClose }) {
   const totalHours = (() => {
     const nowMs = Date.now();
     const sessions = pairRecords(records);
-    const ms = sessions.reduce((acc, sess) => acc + sessionHours(sess, nowMs) * 3600000, 0);
+    let ms = sessions.reduce((acc, sess) => acc + sessionHours(sess, nowMs) * 3600000, 0);
+    // Add approved MANUAL / OT_MANUAL entries
+    for (const r of records) {
+      if ((r.type === 'MANUAL' || r.type === 'OT_MANUAL') && COUNTS_STATUS(r.status) && r.manualDate && r.clockInTime && r.clockOutTime) {
+        try {
+          const inMs  = new Date(`${r.manualDate}T${r.clockInTime}`).getTime();
+          let outMs   = new Date(`${r.manualDate}T${r.clockOutTime}`).getTime();
+          if (r.clockOutNextDay) outMs += 86400000;
+          if (!isNaN(inMs) && !isNaN(outMs) && outMs > inMs) ms += (outMs - inMs);
+        } catch {}
+      }
+    }
     return (ms / 3600000).toFixed(1);
   })();
 
@@ -839,107 +850,68 @@ function Records({ employees }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [error, setError] = useState('');
+  const [lightbox, setLightbox] = useState(null);
 
-  const selectedEmp = employees.find(e => e.id === selectedUserId) || null;
-
-  const doFetch = async (uid) => {
-    if (!uid) { setRecords([]); return; }
+  const doFetch = async () => {
     setError(''); setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/api/records?userId=${uid}`, { headers: authHeaders() });
+      const params = new URLSearchParams();
+      if (selectedUserId) params.set('userId', selectedUserId);
+      if (startDate)  params.set('startDate', startDate);
+      if (endDate)    params.set('endDate', endDate);
+      const res = await axios.get(`${API_URL}/api/records?${params}`, { headers: authHeaders() });
       setRecords(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       setError(e?.response?.data?.detail || 'Failed to fetch records');
     } finally { setLoading(false); }
   };
 
-  const handleSelect = (e) => {
-    const uid = e.target.value;
-    setSelectedUserId(uid);
-    doFetch(uid);
-  };
-
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{ ...S.panelTitle, margin: 0 }}>
-          Attendance Records
-          {records.length > 0 && <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.3)', fontWeight: 600, marginLeft: 8 }}>({records.length})</span>}
-        </h2>
+      <h2 style={S.panelTitle}>Attendance Records</h2>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'flex-end' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <label style={S.filterLabel}>Employee</label>
-          <select value={selectedUserId} onChange={handleSelect} style={{ ...S.filterInput, minWidth: 220 }}>
-            <option value="">Select an employee…</option>
+          <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={S.filterInput}>
+            <option value="">All employees</option>
             {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employeeId})</option>)}
           </select>
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={S.filterLabel}>Start date</label>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={S.filterInput} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <label style={S.filterLabel}>End date</label>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={S.filterInput} />
+        </div>
+        <button onClick={doFetch} disabled={loading} style={S.fetchBtn}>{loading ? 'Loading…' : 'Fetch Records'}</button>
       </div>
-
       {error && <div style={S.errorMsg}>{error}</div>}
-
-      {loading && (
-        <div style={{ textAlign: 'center', padding: '64px 0', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>Loading…</div>
-      )}
-
-      {!loading && !selectedUserId && (
-        <div style={{ textAlign: 'center', padding: '64px 0', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
-          Select an employee to view their attendance records
-        </div>
-      )}
-
-      {!loading && selectedUserId && records.length === 0 && !error && (
-        <div style={{ textAlign: 'center', padding: '64px 0', color: 'rgba(255,255,255,0.2)', fontSize: 14 }}>
-          No records found for {selectedEmp?.name || 'this employee'}
-        </div>
-      )}
-
-      {!loading && records.length > 0 && (
+      {records.length > 0 && (
         <div style={S.tableWrap}>
           <table style={S.table}>
-            <thead>
-              <tr>
-                {['Date','Time','Type','Status','Location','Notes','Photos'].map(h => <th key={h} style={S.th}>{h}</th>)}
-              </tr>
-            </thead>
+            <thead><tr>{['Employee','Type','Status','Time','Date','Location','Photos'].map(h=><th key={h} style={S.th}>{h}</th>)}</tr></thead>
             <tbody>
-              {records.map((r, i) => (
-                <tr key={r.id} style={i < records.length - 1 ? S.trBorder : {}}>
-                  <td style={{ ...S.td, color: 'rgba(255,255,255,0.5)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {r.manualDate || fmtDate(r.timestamp)}
-                  </td>
-                  <td style={{ ...S.td, fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {r.clockInTime
-                      ? <span>{r.clockInTime} → {r.clockOutTime}{r.clockOutNextDay ? <span style={{ color: '#f59e0b', fontSize: 10 }}> +1</span> : ''}</span>
-                      : fmtTime(r.timestamp)}
-                  </td>
-                  <td style={S.td}><Pill meta={typeMeta(r.type)} /></td>
-                  <td style={S.td}><Pill meta={statusMeta(r.status)} /></td>
-                  <td style={{ ...S.td, color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>
-                    {r.location
-                      ? (typeof r.location === 'object'
-                        ? `${r.location.latitude?.toFixed(3)}, ${r.location.longitude?.toFixed(3)}`
-                        : r.location)
-                      : '—'}
-                    {r.distance != null && (
-                      <span style={{ display: 'block', fontSize: 10, color: r.distance < 0.4 ? '#40d9a0' : '#f87171', marginTop: 2 }}>
-                        dist: {r.distance}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ ...S.td, fontSize: 11, color: 'rgba(255,255,255,0.35)', maxWidth: 160 }}>
-                    {r.clockInNote || r.clockOutNote
-                      ? <span>{r.clockInNote}{r.clockInNote && r.clockOutNote ? ' / ' : ''}{r.clockOutNote}</span>
-                      : r.rejectionNote
-                        ? <span style={{ color: '#f87171' }}>{r.rejectionNote}</span>
-                        : '—'}
+              {records.map((r,i) => (
+                <tr key={r.id} style={i<records.length-1?S.trBorder:{}}>
+                  <td style={{ ...S.td, fontFamily:'monospace', fontSize:11, color:'rgba(255,255,255,0.4)' }}>{r.employeeId}</td>
+                  <td style={S.td}><Pill meta={typeMeta(r.type)}/></td>
+                  <td style={S.td}><Pill meta={statusMeta(r.status)}/></td>
+                  <td style={S.td}>{r.clockInTime ? `${r.clockInTime}→${r.clockOutTime}` : fmtTime(r.timestamp)}</td>
+                  <td style={{ ...S.td, color:'rgba(255,255,255,0.4)', fontSize:12 }}>{r.manualDate || fmtDate(r.timestamp)}</td>
+                  <td style={{ ...S.td, color:'rgba(255,255,255,0.3)', fontSize:11 }}>
+                    {r.location ? (typeof r.location==='object' ? `${r.location.latitude?.toFixed(3)}, ${r.location.longitude?.toFixed(3)}` : r.location) : '—'}
                   </td>
                   <td style={S.td}>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      {r.proofPhotoUrl?.startsWith('data:')    && <ProofThumb url={r.proofPhotoUrl}    label="proof" faceScan={true} />}
-                      {r.clockInProofUrl?.startsWith('data:')  && <ProofThumb url={r.clockInProofUrl}  label="in" />}
-                      {r.clockOutProofUrl?.startsWith('data:') && <ProofThumb url={r.clockOutProofUrl} label="out" />}
-                      {!r.proofPhotoUrl && !r.clockInProofUrl && !r.clockOutProofUrl && <span style={{ fontSize: 11, color: '#333' }}>—</span>}
+                      {r.proofPhotoUrl?.startsWith('data:')    && <ProofThumb url={r.proofPhotoUrl}    label="proof" faceScan={true}/>}
+                      {r.clockInProofUrl?.startsWith('data:')  && <ProofThumb url={r.clockInProofUrl}  label="in"/>}
+                      {r.clockOutProofUrl?.startsWith('data:') && <ProofThumb url={r.clockOutProofUrl} label="out"/>}
+                      {!r.proofPhotoUrl && !r.clockInProofUrl && !r.clockOutProofUrl && <span style={{ fontSize:11, color:'#333' }}>—</span>}
                     </div>
                   </td>
                 </tr>
@@ -948,6 +920,12 @@ function Records({ employees }) {
           </table>
         </div>
       )}
+      {!loading && records.length === 0 && (
+        <div style={{ textAlign:'center', padding:'64px 0', color:'rgba(255,255,255,0.2)', fontSize:14 }}>
+          Select filters and click Fetch Records
+        </div>
+      )}
+      {lightbox && <Lightbox src={lightbox.src} faceScan={lightbox.faceScan} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
